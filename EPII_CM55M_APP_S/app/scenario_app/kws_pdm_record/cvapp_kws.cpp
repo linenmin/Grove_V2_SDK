@@ -595,23 +595,16 @@ int cv_kws_run(struct_kws_algoResult *algoresult_kws_pdm_record, int16_t *audio_
             std::vector<MyClassificationResult> vecResults;
 
             GetClassificationResults(kws_output, vecResults, kwtLabels, 1, true);
-            // printf("Classification results obtained\n");
-
-            // xprintf("-----------------------------------------------------------------------------\n");
             
-            
+            // 只在检测到关键词时打印结果
             if(vecResults[0].normalisedVal >= threshold)
             {
-                xprintf("Label: %s " , vecResults[0].label.c_str());
-                xprintf("Score: %d %", static_cast<int>(vecResults[0].normalisedVal * 100));
-                xprintf("Label Index: %d \n" , vecResults[0].labelIdx);
+                // 将分数转换为整数百分比，避免使用 %f
+                int score_percent = static_cast<int>(vecResults[0].normalisedVal * 100);
+                xprintf("Label: %s ", vecResults[0].label.c_str());
+                xprintf("Score: %d%% ", score_percent);
+                xprintf("Index: %d\n", vecResults[0].labelIdx);
             }
-            else
-            {
-                xprintf("None \n");
-            }
-
-            // xprintf("-----------------------------------------------------------------------------\n");
 
             #ifdef EACH_STEP_TICK
                 SystemGetTick(&systick_2, &loop_cnt_2);

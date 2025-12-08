@@ -135,8 +135,8 @@ CUSTOMER ?= seeed
 # allon_sensor_tflm_cmsis_nn (LIB_CMSIS_NN_ENALBE = 1)
 # allon_sensor_tflm_fatfs
 # allon_sensor_tflm_freertos
-# allon_jpeg_encode
-# fatfs_mmc_spi
+# allon_jpeg_encode   JPEG写盘流程
+# fatfs_mmc_spi 挂载 SD，并读取输入图像文件
 # hello_world_freertos_tz_s_only
 # tflm_fd_fm
 # tflm_yolov8_od
@@ -146,14 +146,15 @@ CUSTOMER ?= seeed
 # hello_world_cmsis_dsp
 # hello_world_cmsis_cv
 # kws_pdm_record
-# ei_standalone_inferencing
+# ei_standalone_inferencing 模型运行层 Ethos-U/TFLM 初始化
 # ei_standalone_inferencing_camera
-# edge_impulse_firmware
+# edge_impulse_firmware 含 AT 命令和串口数据流，可参考其串口传输框架，把光流结果（或可视化后的 JPEG/RAW）发到主机
 # tflm_peoplenet
 # tflm_yolo11_od
 # tflm_yolov8_gender_cls
+# optical_sd   从sd卡中读取图片并进行光流推理
 ##
-APP_TYPE = allon_sensor_tflm
+APP_TYPE = fatfs_mmc_spi
  
 ### Options above must be added before include options.mk ###
 override EPII_ROOT := $(strip $(subst \,/,$(EPII_ROOT)))

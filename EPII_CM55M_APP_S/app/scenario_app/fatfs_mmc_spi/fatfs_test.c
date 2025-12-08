@@ -88,17 +88,18 @@ int fatfs_test(void) {
         printf("cur_dir = %s\r\n", cur_dir);
     }
 
-    res = list_dir(cur_dir);
-    if (res)
-    {
-        printf("list_dir res = %d\r\n", res);
-    }
+    // COMMENTED OUT to avoid printing existing files on SD card
+    // res = list_dir(cur_dir);
+    // if (res)
+    // {
+    //     printf("list_dir res = %d\r\n", res);
+    // }
 
-    res = scan_files(cur_dir);
-    if (res)
-    {
-        printf("scan_files res = %d\r\n", res);
-    }
+    // res = scan_files(cur_dir);
+    // if (res)
+    // {
+    //     printf("scan_files res = %d\r\n", res);
+    // }
 
     xsprintf(buffer, "%s%s", cur_dir, file_dir);
     printf("Remove directory %s.\r\n", buffer);
@@ -114,7 +115,8 @@ int fatfs_test(void) {
 
     res = f_getcwd(cur_dir, len);      /* Get current directory */
     printf("cur_dir = %s\r\n", cur_dir);
-    res = list_dir(cur_dir);
+    // COMMENTED OUT to avoid printing existing files on SD card
+    // res = list_dir(cur_dir);
 
     for (int i = 0; i < 10; i++ )
     {
@@ -136,7 +138,8 @@ int fatfs_test(void) {
 
     res = f_getcwd(cur_dir, len);      /* Get current directory */
     printf("cur_dir = %s\r\n", cur_dir);
-    res = list_dir(cur_dir);
+    // COMMENTED OUT to avoid printing existing files on SD card
+    // res = list_dir(cur_dir);
 
     for (int i = 0; i < 10; i++ )
     {

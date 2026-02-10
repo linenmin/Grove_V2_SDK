@@ -4,13 +4,15 @@ set -e
 # 切换到工程根目录（脚本放在根目录时可省略）
 # cd ~/Seeed_Grove_Vision_AI_Module_V2
 
-echo "[1/4] Building firmware..."
+echo "[1/4] Building firmware (quiet, errors still显示)..."
 cd EPII_CM55M_APP_S
 
-# 如果你需要clean，取消下面注释
+# 如需干净构建，取消下一行注释
 # make clean
 
-make -j4
+# -s 静默命令行；--no-print-directory 去掉递归提示
+# 将 stdout 丢弃，只保留 stderr（警告/错误）。若需查看完整输出，去掉重定向。
+make -s --no-print-directory -j4 >/dev/null
 echo "Firmware build done."
 
 echo "[2/4] Generating image..."

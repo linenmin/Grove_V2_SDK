@@ -154,7 +154,7 @@ CUSTOMER ?= seeed
 # tflm_yolov8_gender_cls
 # optical_sd   从sd卡中读取图片并进行光流推理
 ##
-APP_TYPE = fatfs_mmc_spi
+APP_TYPE = optical_sd
  
 ### Options above must be added before include options.mk ###
 override EPII_ROOT := $(strip $(subst \,/,$(EPII_ROOT)))

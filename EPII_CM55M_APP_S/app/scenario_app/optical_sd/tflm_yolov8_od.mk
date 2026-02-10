@@ -23,8 +23,14 @@ LIB_SEL = pwrmgmt sensordp tflmtag2412_u55tag2411 spi_ptl spi_eeprom hxevent img
 # middleware support feature
 # Add new middleware here
 # The source code should be loacted in ~\middleware\{mid_name}\
-##
-MID_SEL =
+## 启用 FatFS，提供 ff.h/f_mount 等
+MID_SEL = fatfs
+
+# FatFS 端口选择，使用 SPI 卡
+FATFS_PORT_LIST = mmc_spi
+
+# 使能 CMSIS SPI 驱动，提供 Driver_SPI0 符号
+CMSIS_DRIVERS_LIST = SPI
 
 override OS_SEL:=
 override TRUSTZONE := y

@@ -1029,7 +1029,14 @@ int tflm_yolov8_od_app(void) {
 #ifdef EN_ALGO
 		cv_yolov8n_ob_init(true, true, YOLOV8_OBJECT_DETECTION_FLASH_ADDR);
 #endif
-	    app_start_state(APP_STATE_ALLON_YOLOV8N_OB);
+		// 改为离线SD推理，无需摄像头/事件流，直接循环推理
+		while (1) {
+#ifdef EN_ALGO
+			cv_yolov8n_ob_run(&algoresult_yolov8n_ob);
+#endif
+			// 注释掉强制延时，让推理连续进行
+			// hx_drv_timer_cm55x_delay_ms(1000, TIMER_STATE_DC);
+		}
 	}
 	return 0;
 }

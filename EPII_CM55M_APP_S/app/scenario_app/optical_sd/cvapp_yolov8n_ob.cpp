@@ -45,15 +45,7 @@
 #define YOLOV8_OB_INPUT_TENSOR_HEIGHT  192   // 与模型输入一致：高 192
 #define YOLOV8_OB_INPUT_TENSOR_CHANNEL INPUT_IMAGE_CHANNELS
 
-#define YOLOV8N_OB_DBG_APP_LOG 0     // 简单关闭调试日志
-
-
-// #define EACH_STEP_TICK
-#define TOTAL_STEP_TICK
-#define YOLOV8_POST_EACH_STEP_TICK 0
-uint32_t systick_1, systick_2;
-uint32_t loop_cnt_1, loop_cnt_2;
-#define CPU_CLK	0xffffff+1
+#define CPU_CLK	0xffffff+1  // SysTick 24-bit 回退路径使用
 #ifdef TRUSTZONE_SEC
 #define U55_BASE	BASE_ADDR_APB_U55_CTRL_ALIAS
 #else
@@ -116,6 +108,9 @@ static const int RAW_FRAME_BYTES = YOLOV8_OB_INPUT_TENSOR_WIDTH * YOLOV8_OB_INPU
 static int raw_frame_idx = 1;                               // 当前帧序号
 static const int raw_frame_max = 50;                        // 数据集中帧数（可按实际修改）
 static int loop_cnt = 0;                                    // 推理循环计数
+static const int LOG_PRINT_INTERVAL = 5;                    // 日志打印间隔：每5帧打印一次
+static bool use_dwt_counter = false;                        // 是否启用 DWT 周期计数器
+static uint32_t cm55m_clk_hz = 0;                           // CM55M 实际主频(Hz)
 static FATFS fs;
 static bool sd_mounted = false;
 
@@ -133,6 +128,80 @@ static void compute_checksum(const uint8_t *buf, size_t len, uint32_t *sum_out, 
 	*sum_out = s;
 	*min_out = mn;
 	*max_out = mx;
+}
+
+// 初始化高精度计时：优先使用 DWT 周期计数器，避免 RTOS 下 SysTick 计时偏差
+static void init_perf_counter()
+{
+	uint32_t freq = 0;
+	if (hx_drv_scu_get_freq(SCU_CLK_FREQ_TYPE_HSC_CM55M, &freq) == SCU_NO_ERROR && freq > 0U) {
+		cm55m_clk_hz = freq;
+	} else if (SystemCoreClock > 0U) {
+		cm55m_clk_hz = SystemCoreClock;
+	} else {
+		cm55m_clk_hz = 24000000U;
+	}
+
+	// 某些芯片/配置可能关闭了 DWT CYCCNT，先做可用性探测
+	if ((DWT->CTRL & DWT_CTRL_NOCYCCNT_Msk) != 0U) {
+		use_dwt_counter = false;
+		xprintf("DWT CYCCNT unavailable, fallback to legacy tick timing\r\n");
+		return;
+	}
+
+	CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk;
+	DWT->CYCCNT = 0U;
+	DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
+	__DSB();
+	__ISB();
+
+	uint32_t c0 = DWT->CYCCNT;
+	for (volatile int i = 0; i < 64; ++i) { __NOP(); }
+	uint32_t c1 = DWT->CYCCNT;
+	use_dwt_counter = (c1 != c0);
+
+	if (!use_dwt_counter) {
+		xprintf("DWT CYCCNT start failed, fallback to legacy tick timing\r\n");
+	}
+}
+
+// 将 cycle 数转换为 us（微秒），四舍五入
+static uint32_t cycles_to_us(uint32_t cycles)
+{
+	if (cm55m_clk_hz == 0U) return 0U;
+	uint64_t us = ((uint64_t)cycles * 1000000ULL + (uint64_t)(cm55m_clk_hz / 2U)) / (uint64_t)cm55m_clk_hz;
+	if (us > 0xFFFFFFFFULL) us = 0xFFFFFFFFULL;
+	return (uint32_t)us;
+}
+
+// 统一计时打点结构：DWT 走 tick 字段，SysTick 回退时使用 tick+loop
+typedef struct {
+	uint32_t tick;
+	uint32_t loop;
+} perf_stamp_t;
+
+static uint32_t systick_ticks_to_us(uint32_t ticks)
+{
+	return (uint32_t)(((uint64_t)ticks * 1000000ULL + (CPU_CLK / 2U)) / CPU_CLK);
+}
+
+static inline void perf_mark(perf_stamp_t *s)
+{
+	if (use_dwt_counter) {
+		s->tick = DWT->CYCCNT;
+		s->loop = 0;
+	} else {
+		SystemGetTick(&s->tick, &s->loop);
+	}
+}
+
+static uint32_t perf_elapsed_us(const perf_stamp_t *start, const perf_stamp_t *end)
+{
+	if (use_dwt_counter) {
+		return cycles_to_us(end->tick - start->tick);
+	}
+	uint32_t ticks = (end->loop - start->loop) * CPU_CLK + (start->tick - end->tick);
+	return systick_ticks_to_us(ticks);
 }
 
 static void _arm_npu_irq_handler(void)
@@ -198,6 +267,9 @@ int cv_yolov8n_ob_init(bool security_enable, bool privilege_enable, uint32_t mod
 	// 初始化 Ethos-U
 	if(_arm_npu_init(security_enable, privilege_enable)!=0)
 		return -1;
+
+	// 初始化性能计数器（用于更精确统计推理耗时）
+	init_perf_counter();
 
 	if(model_addr != 0) {
 		static const tflite::Model*yolov8n_ob_model = tflite::GetModel((const void *)model_addr);
@@ -290,20 +362,16 @@ int cv_yolov8n_ob_run(struct_yolov8_ob_algoResult *algoresult_yolov8n_ob) {
 	memset(algoresult_yolov8n_ob, 0, sizeof(struct_yolov8_ob_algoResult));
 
     if(yolov8n_ob_int_ptr!= nullptr) {
-		// 各阶段计时变量
-		uint32_t systick_total_start, systick_total_end;
-		uint32_t loop_cnt_total_start, loop_cnt_total_end;
-		uint32_t systick_sd_start, systick_sd_end;
-		uint32_t loop_cnt_sd_start, loop_cnt_sd_end;
-		uint32_t systick_preproc_start, systick_preproc_end;
-		uint32_t loop_cnt_preproc_start, loop_cnt_preproc_end;
-		uint32_t systick_infer_start, systick_infer_end;
-		uint32_t loop_cnt_infer_start, loop_cnt_infer_end;
+		// 各阶段计时点
+		perf_stamp_t t_total_start, t_total_end;
+		perf_stamp_t t_sd_start, t_sd_end;
+		perf_stamp_t t_preproc_start, t_preproc_end;
+		perf_stamp_t t_infer_start, t_infer_end;
+		uint32_t sd_us = 0, preproc_us = 0, infer_us = 0, total_us = 0;
 
-		// 开始总计时
-		SystemGetTick(&systick_total_start, &loop_cnt_total_start);
-		// 开始SD读取计时
-		SystemGetTick(&systick_sd_start, &loop_cnt_sd_start);
+		// 开始总计时 / SD计时
+		perf_mark(&t_total_start);
+		perf_mark(&t_sd_start);
 
 		// 读取两帧 raw（RGB888），前帧 idx，后帧 idx+1
 		if (raw_buf_1 == nullptr || raw_buf_2 == nullptr) {
@@ -319,11 +387,9 @@ int cv_yolov8n_ob_run(struct_yolov8_ob_algoResult *algoresult_yolov8n_ob) {
 			return -1;
 		}
 
-		// 结束SD读取计时
-		SystemGetTick(&systick_sd_end, &loop_cnt_sd_end);
-
-		// 开始数据预处理计时
-		SystemGetTick(&systick_preproc_start, &loop_cnt_preproc_start);
+		// 结束SD读取计时，开始预处理计时
+		perf_mark(&t_sd_end);
+		perf_mark(&t_preproc_start);
 
 		// 计算输入帧的简单校验和与最值
 		compute_checksum(raw_buf_1, RAW_FRAME_BYTES, &raw_buf_1_sum, &raw_buf_1_min, &raw_buf_1_max);
@@ -344,11 +410,9 @@ int cv_yolov8n_ob_run(struct_yolov8_ob_algoResult *algoresult_yolov8n_ob) {
 			input_ptr[i + pix_cnt*3] = (int8_t)q2;
     	}
 
-		// 结束数据预处理计时
-		SystemGetTick(&systick_preproc_end, &loop_cnt_preproc_end);
-
-		// 开始推理计时
-		SystemGetTick(&systick_infer_start, &loop_cnt_infer_start);
+		// 结束预处理计时，开始推理计时
+		perf_mark(&t_preproc_end);
+		perf_mark(&t_infer_start);
 
 		// 推理
 		TfLiteStatus invoke_status = yolov8n_ob_int_ptr->Invoke();
@@ -358,25 +422,14 @@ int cv_yolov8n_ob_run(struct_yolov8_ob_algoResult *algoresult_yolov8n_ob) {
 			return -1;
 		}
 
-		// 结束推理计时并计算推理时间
-		SystemGetTick(&systick_infer_end, &loop_cnt_infer_end);
-		uint32_t infer_ticks = (loop_cnt_infer_end - loop_cnt_infer_start) * CPU_CLK + (systick_infer_start - systick_infer_end);
-		float infer_ms = (float)infer_ticks / (CPU_CLK / 1000.0f); // 转换为毫秒
-		int infer_ms_int = (int)(infer_ms * 100); // 放大100倍用于打印两位小数
+		// 结束推理计时并计算各阶段耗时
+		perf_mark(&t_infer_end);
+		perf_mark(&t_total_end);
 
-		// 结束总计时并计算各阶段时间
-		SystemGetTick(&systick_total_end, &loop_cnt_total_end);
-		uint32_t total_ticks = (loop_cnt_total_end - loop_cnt_total_start) * CPU_CLK + (systick_total_start - systick_total_end);
-		float total_ms = (float)total_ticks / (CPU_CLK / 1000.0f);
-		int total_ms_int = (int)(total_ms * 100);
-
-		uint32_t sd_ticks = (loop_cnt_sd_end - loop_cnt_sd_start) * CPU_CLK + (systick_sd_start - systick_sd_end);
-		float sd_ms = (float)sd_ticks / (CPU_CLK / 1000.0f);
-		int sd_ms_int = (int)(sd_ms * 100);
-
-		uint32_t preproc_ticks = (loop_cnt_preproc_end - loop_cnt_preproc_start) * CPU_CLK + (systick_preproc_start - systick_preproc_end);
-		float preproc_ms = (float)preproc_ticks / (CPU_CLK / 1000.0f);
-		int preproc_ms_int = (int)(preproc_ms * 100);
+		sd_us = perf_elapsed_us(&t_sd_start, &t_sd_end);
+		preproc_us = perf_elapsed_us(&t_preproc_start, &t_preproc_end);
+		infer_us = perf_elapsed_us(&t_infer_start, &t_infer_end);
+		total_us = perf_elapsed_us(&t_total_start, &t_total_end);
 
 		// 读取输出：shape [1, H, W, 4]，通道 0/1 为 dx/dy，2/3 为 log_var
 		float out_scale = ((TfLiteAffineQuantization*)(yolov8n_ob_output->quantization.params))->scale->data[0];
@@ -405,33 +458,35 @@ int cv_yolov8n_ob_run(struct_yolov8_ob_algoResult *algoresult_yolov8n_ob) {
 		int mean_dx_milli = (int)(mean_dx * 1000);
 		int mean_dy_milli = (int)(mean_dy * 1000);
 
-		// 输出加入输入校验和与输出最值，排查全零
-		// 计算输出通道 0/1 的最值（int8）
-		int8_t out0_min = 127, out0_max = -128;
-		int8_t out1_min = 127, out1_max = -128;
-		for (int i = 0; i < pixels; ++i) {
-			int8_t v0 = out_data[i*4 + 0];
-			int8_t v1 = out_data[i*4 + 1];
-			if (v0 < out0_min) out0_min = v0;
-			if (v0 > out0_max) out0_max = v0;
-			if (v1 < out1_min) out1_min = v1;
-			if (v1 > out1_max) out1_max = v1;
-		}
+		// 按日志间隔打印，减少串口输出对循环的影响。
+		if ((loop_cnt % LOG_PRINT_INTERVAL) == 0) {
+			// 输出加入输入校验和与输出最值，排查全零
+			int8_t out0_min = 127, out0_max = -128;
+			int8_t out1_min = 127, out1_max = -128;
+			for (int i = 0; i < pixels; ++i) {
+				int8_t v0 = out_data[i*4 + 0];
+				int8_t v1 = out_data[i*4 + 1];
+				if (v0 < out0_min) out0_min = v0;
+				if (v0 > out0_max) out0_max = v0;
+				if (v1 < out1_min) out1_min = v1;
+				if (v1 > out1_max) out1_max = v1;
+			}
 
-		xprintf("[loop=%d][frame=%d/%d] center dx=%d.%03d dy=%d.%03d | mean dx=%d.%03d dy=%d.%03d | in1 sum=%u min=%u max=%u | in2 sum=%u min=%u max=%u | out0 min=%d max=%d out1 min=%d max=%d | times: sd=%d.%02dms preproc=%d.%02dms infer=%d.%02dms total=%d.%02dms\r\n",
-				loop_cnt,
-				raw_frame_idx, raw_frame_max,
-				dx_milli/1000, (dx_milli>=0?dx_milli:-dx_milli)%1000,
-				dy_milli/1000, (dy_milli>=0?dy_milli:-dy_milli)%1000,
-				mean_dx_milli/1000, (mean_dx_milli>=0?mean_dx_milli:-mean_dx_milli)%1000,
-				mean_dy_milli/1000, (mean_dy_milli>=0?mean_dy_milli:-mean_dy_milli)%1000,
-				raw_buf_1_sum, raw_buf_1_min, raw_buf_1_max,
-				raw_buf_2_sum, raw_buf_2_min, raw_buf_2_max,
-				out0_min, out0_max, out1_min, out1_max,
-				sd_ms_int/100, sd_ms_int%100,
-				preproc_ms_int/100, preproc_ms_int%100,
-				infer_ms_int/100, infer_ms_int%100,
-				total_ms_int/100, total_ms_int%100);
+			xprintf("[loop=%d][frame=%d/%d] center dx=%d.%03d dy=%d.%03d | mean dx=%d.%03d dy=%d.%03d | in1 sum=%u min=%u max=%u | in2 sum=%u min=%u max=%u | out0 min=%d max=%d out1 min=%d max=%d | times: sd=%u.%03ums preproc=%u.%03ums infer=%u.%03ums total=%u.%03ums\r\n",
+					loop_cnt,
+					raw_frame_idx, raw_frame_max,
+					dx_milli/1000, (dx_milli>=0?dx_milli:-dx_milli)%1000,
+					dy_milli/1000, (dy_milli>=0?dy_milli:-dy_milli)%1000,
+					mean_dx_milli/1000, (mean_dx_milli>=0?mean_dx_milli:-mean_dx_milli)%1000,
+					mean_dy_milli/1000, (mean_dy_milli>=0?mean_dy_milli:-mean_dy_milli)%1000,
+					raw_buf_1_sum, raw_buf_1_min, raw_buf_1_max,
+					raw_buf_2_sum, raw_buf_2_min, raw_buf_2_max,
+					out0_min, out0_max, out1_min, out1_max,
+					sd_us/1000, sd_us%1000,
+					preproc_us/1000, preproc_us%1000,
+					infer_us/1000, infer_us%1000,
+					total_us/1000, total_us%1000);
+		}
 
 		// 帧序号前进
 		raw_frame_idx++;
@@ -448,4 +503,3 @@ int cv_yolov8n_ob_deinit()
 	
 	return 0;
 }
-

@@ -176,9 +176,11 @@ int cv_yolov8n_ob_init(bool security_enable, bool privilege_enable, uint32_t mod
     int ercode = 0;
 
     g_ctx.raw_frame_idx = 1;
+    g_ctx.next_frame_idx = 1;
     g_ctx.raw_frame_max = 50;
     g_ctx.loop_cnt = 0;
     g_ctx.log_print_interval = 5;
+    g_ctx.frame_pair_ready = false;
 
     tensor_arena = mm_reserve_align(tensor_arena_size, 0x20);
     xprintf("TA[%x]\r\n", tensor_arena);
@@ -279,13 +281,38 @@ int cv_yolov8n_ob_run(struct_yolov8_ob_algoResult *algoresult_yolov8n_ob)
     ob_perf_mark(&t_total_start);
     ob_perf_mark(&t_sd_start);
 
-    int next_frame_idx = g_ctx.raw_frame_idx;
-    if (ob_sd_load_frame_pair(g_ctx.raw_frame_idx,
-                              g_ctx.raw_buf_1,
-                              g_ctx.raw_buf_2,
-                              RAW_FRAME_BYTES,
-                              &next_frame_idx) != 0) {
-        return -1;
+    if (!g_ctx.frame_pair_ready) {
+        // 首轮先构建 (i, i+1) 双帧。
+        int first_next_idx = 0;
+        if (ob_sd_load_frame(g_ctx.raw_frame_idx, g_ctx.raw_buf_1, RAW_FRAME_BYTES) != 0) {
+            return -1;
+        }
+        if (ob_sd_next_frame_idx(g_ctx.raw_frame_idx, &first_next_idx) != 0) {
+            return -1;
+        }
+        if (ob_sd_load_frame(first_next_idx, g_ctx.raw_buf_2, RAW_FRAME_BYTES) != 0) {
+            return -1;
+        }
+        g_ctx.next_frame_idx = first_next_idx;
+        g_ctx.frame_pair_ready = true;
+    } else {
+        // 后续轮次复用上一轮后帧，只新增读取一帧。
+        uint8_t *new_front_buf = g_ctx.raw_buf_2;
+        uint8_t *new_back_buf = g_ctx.raw_buf_1;
+        int new_frame_idx = g_ctx.next_frame_idx;
+        int new_next_idx = 0;
+
+        if (ob_sd_next_frame_idx(new_frame_idx, &new_next_idx) != 0) {
+            return -1;
+        }
+        if (ob_sd_load_frame(new_next_idx, new_back_buf, RAW_FRAME_BYTES) != 0) {
+            return -1;
+        }
+
+        g_ctx.raw_buf_1 = new_front_buf;
+        g_ctx.raw_buf_2 = new_back_buf;
+        g_ctx.raw_frame_idx = new_frame_idx;
+        g_ctx.next_frame_idx = new_next_idx;
     }
 
     ob_perf_mark(&t_sd_end);
@@ -343,7 +370,6 @@ int cv_yolov8n_ob_run(struct_yolov8_ob_algoResult *algoresult_yolov8n_ob)
                           g_ctx.total_us);
     }
 
-    g_ctx.raw_frame_idx = next_frame_idx;
     g_ctx.loop_cnt++;
     return ercode;
 }

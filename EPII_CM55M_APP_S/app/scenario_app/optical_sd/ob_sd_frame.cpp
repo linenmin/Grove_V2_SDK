@@ -14,44 +14,6 @@ static int g_frame_max = 0;
 static FATFS g_fs;
 static bool g_sd_mounted = false;
 
-static int load_raw_frame(int idx, uint8_t *dst_buf, size_t dst_size)
-{
-    if (g_raw_dir == nullptr || g_raw_fmt == nullptr || g_frame_max <= 0) {
-        xprintf("SD config invalid\n");
-        return -1;
-    }
-
-    char filepath[128];
-    char namebuf[64];
-    FIL fp;
-    UINT br = 0;
-
-    snprintf(namebuf, sizeof(namebuf), g_raw_fmt, idx);
-    snprintf(filepath, sizeof(filepath), "%s/%s", g_raw_dir, namebuf);
-
-    if (!g_sd_mounted) {
-        if (f_mount(&g_fs, "0:", 1) != FR_OK) {
-            xprintf("SD mount fail\n");
-            return -1;
-        }
-        g_sd_mounted = true;
-    }
-
-    if (f_open(&fp, filepath, FA_READ) != FR_OK) {
-        xprintf("open %s fail\n", filepath);
-        return -1;
-    }
-
-    if (f_read(&fp, dst_buf, dst_size, &br) != FR_OK || br != dst_size) {
-        xprintf("read %s fail, br=%u\n", filepath, br);
-        f_close(&fp);
-        return -1;
-    }
-
-    f_close(&fp);
-    return 0;
-}
-
 }  // namespace
 
 int ob_sd_init(const char *raw_dir, const char *raw_fmt, int frame_max)
@@ -67,29 +29,57 @@ int ob_sd_init(const char *raw_dir, const char *raw_fmt, int frame_max)
     return 0;
 }
 
-int ob_sd_load_frame_pair(int frame_idx,
-                          uint8_t *buf1,
-                          uint8_t *buf2,
-                          size_t bytes_per_frame,
-                          int *next_frame_idx)
+int ob_sd_next_frame_idx(int frame_idx, int *next_idx)
 {
-    if (buf1 == nullptr || buf2 == nullptr || bytes_per_frame == 0 || next_frame_idx == nullptr) {
+    if (next_idx == nullptr || g_frame_max <= 0) {
         return -1;
     }
 
-    if (load_raw_frame(frame_idx, buf1, bytes_per_frame) != 0) {
+    int idx = frame_idx + 1;
+    if (idx > g_frame_max) {
+        idx = 1;
+    }
+    *next_idx = idx;
+    return 0;
+}
+
+int ob_sd_load_frame(int frame_idx, uint8_t *buf, size_t bytes_per_frame)
+{
+    if (g_raw_dir == nullptr || g_raw_fmt == nullptr || g_frame_max <= 0) {
+        xprintf("SD config invalid\n");
+        return -1;
+    }
+    if (buf == nullptr || bytes_per_frame == 0) {
         return -1;
     }
 
-    int idx2 = frame_idx + 1;
-    if (idx2 > g_frame_max) {
-        idx2 = 1;
+    char filepath[128];
+    char namebuf[64];
+    FIL fp;
+    UINT br = 0;
+
+    snprintf(namebuf, sizeof(namebuf), g_raw_fmt, frame_idx);
+    snprintf(filepath, sizeof(filepath), "%s/%s", g_raw_dir, namebuf);
+
+    if (!g_sd_mounted) {
+        if (f_mount(&g_fs, "0:", 1) != FR_OK) {
+            xprintf("SD mount fail\n");
+            return -1;
+        }
+        g_sd_mounted = true;
     }
 
-    if (load_raw_frame(idx2, buf2, bytes_per_frame) != 0) {
+    if (f_open(&fp, filepath, FA_READ) != FR_OK) {
+        xprintf("open %s fail\n", filepath);
         return -1;
     }
 
-    *next_frame_idx = idx2;
+    if (f_read(&fp, buf, bytes_per_frame, &br) != FR_OK || br != bytes_per_frame) {
+        xprintf("read %s fail, br=%u\n", filepath, br);
+        f_close(&fp);
+        return -1;
+    }
+
+    f_close(&fp);
     return 0;
 }

@@ -46,6 +46,7 @@ FnPtr_GPIO_Pinmux getFnPtr_CMSIS_Driver_SPI0_SSPI_CS_GPIO_Pinmux(void) {
 
 #define SPI_CLOCK_SLOW   (200000)
 #define SPI_CLOCK_FAST   (12000000)
+#define SD_POLL_INTERVAL_US (20U)
 
 #define ASSERT_HIGH(X)  assert(X == ARM_DRIVER_OK)
 
@@ -91,6 +92,7 @@ static BYTE CardType;    /* Card type flags */
 /* SPI controls (Platform dependent)                                     */
 /*-----------------------------------------------------------------------*/
 #define DELAY(MS)   hx_drv_timer_cm55x_delay_ms(MS, TIMER_STATE_DC)
+#define DELAY_US(US)   hx_drv_timer_cm55x_delay_us(US, TIMER_STATE_DC)
 //#define DELAY(MS)   board_delay_ms(MS)
 
 #define MMC_WP()    0
@@ -184,19 +186,19 @@ static int wait_ready (    /* 1:Ready, 0:Timeout */
 )
 {
     BYTE datain;
-    uint32_t cnt = 0;
+    uint32_t waited_us = 0;
+    const uint32_t timeout_us = (uint32_t)wt * 1000U;
 
     datain = xchg_spi(0xFF);
 
-    while (datain != 0xFF && cnt <= wt) {
+    while (datain != 0xFF && waited_us < timeout_us) {
+        DELAY_US(SD_POLL_INTERVAL_US);
+        waited_us += SD_POLL_INTERVAL_US;
         datain = xchg_spi(0xFF);
-        DELAY(1);
-        wait_spi_completed(1);
-        cnt++;
         /* This loop will take a time. Insert rot_rdq() here for multitask envilonment. */
     }   /* Wait for card goes ready or timeout */
 
-    if (cnt > wt)
+    if (datain != 0xFF)
         TRACE_PRINTF("wait_ready Timeout %d\r\n", wt);
 
     return (datain == 0xFF) ? 1 : 0;
@@ -241,19 +243,20 @@ static int rcvr_datablock (    /* 1:OK, 0:Error */
     TRACE_PRINTF("0x%x 0x%x\r\n", (uint32_t)buff, btr);
 
     BYTE token;
-    uint32_t cnt = 0;
-    uint32_t wt_ms = 200;
+    const uint32_t wt_ms = 200;
+    uint32_t waited_us = 0;
+    const uint32_t timeout_us = wt_ms * 1000U;
 
     token = xchg_spi(0xFF);
 
-    while ((token == 0xFF) && cnt <= wt_ms) {  /* Wait for DataStart token in timeout of 200ms */
+    while (token == 0xFF && waited_us < timeout_us) {  /* Wait for DataStart token in timeout of 200ms */
+        DELAY_US(SD_POLL_INTERVAL_US);
+        waited_us += SD_POLL_INTERVAL_US;
         token = xchg_spi(0xFF);
-        DELAY(1);
-        cnt++;
         /* This loop will take a time. Insert rot_rdq() here for multitask envilonment. */
     }
 
-    if (cnt > wt_ms)
+    if (token != 0xFE)
         TRACE_PRINTF("rcvr_datablock Timeout %d\r\n", wt_ms);
 
     if(token != 0xFE)

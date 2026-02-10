@@ -9,11 +9,8 @@ extern "C" {
 #endif
 
 int ob_sd_init(const char *raw_dir, const char *raw_fmt, int frame_max);
-int ob_sd_load_frame_pair(int frame_idx,
-                          uint8_t *buf1,
-                          uint8_t *buf2,
-                          size_t bytes_per_frame,
-                          int *next_frame_idx);
+int ob_sd_load_frame(int frame_idx, uint8_t *buf, size_t bytes_per_frame);
+int ob_sd_next_frame_idx(int frame_idx, int *next_idx);
 
 #ifdef __cplusplus
 }

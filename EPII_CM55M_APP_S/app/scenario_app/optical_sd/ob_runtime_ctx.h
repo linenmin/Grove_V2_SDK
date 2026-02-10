@@ -1,6 +1,7 @@
 #ifndef OPTICAL_SD_OB_RUNTIME_CTX_H_
 #define OPTICAL_SD_OB_RUNTIME_CTX_H_
 
+#include <stdbool.h>
 #include <stdint.h>
 
 #include "ob_debug_stats.h"
@@ -14,9 +15,11 @@ typedef struct {
     uint8_t *raw_buf_2;
 
     int raw_frame_idx;
+    int next_frame_idx;
     int raw_frame_max;
     int loop_cnt;
     int log_print_interval;
+    bool frame_pair_ready;
 
     ob_checksum_stats_t raw1_stats;
     ob_checksum_stats_t raw2_stats;

@@ -44,8 +44,8 @@
 #endif
 
 #define INPUT_IMAGE_CHANNELS 6
-#define YOLOV8_OB_INPUT_TENSOR_WIDTH 256
-#define YOLOV8_OB_INPUT_TENSOR_HEIGHT 192
+#define YOLOV8_OB_INPUT_TENSOR_WIDTH 240
+#define YOLOV8_OB_INPUT_TENSOR_HEIGHT 180
 #define YOLOV8_OB_INPUT_TENSOR_CHANNEL INPUT_IMAGE_CHANNELS
 
 #ifdef TRUSTZONE_SEC
@@ -87,7 +87,7 @@ void SSPI_CS_GPIO_Dir(bool setDirOut)
 
 namespace {
 
-constexpr int tensor_arena_size = 1600 * 1024;
+constexpr int tensor_arena_size = 1650 * 1024;
 
 static uint32_t tensor_arena = 0;
 static ethosu_driver ethosu_drv;

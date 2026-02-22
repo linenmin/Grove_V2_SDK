@@ -108,7 +108,7 @@ void ob_log_infer_line(int loop_cnt,
         return;
     }
 
-    xprintf("[loop=%d][frame=%d/%d] center dx=%d.%03d dy=%d.%03d | mean dx=%d.%03d dy=%d.%03d | in1 sum=%u min=%u max=%u | in2 sum=%u min=%u max=%u | out0 min=%d max=%d out1 min=%d max=%d | times: sd=%u.%03ums preproc=%u.%03ums infer=%u.%03ums total=%u.%03ums\\r\\n",
+    xprintf("[loop=%d][frame=%d/%d] center dx=%d.%03d dy=%d.%03d | mean dx=%d.%03d dy=%d.%03d | in1 sum=%u min=%u max=%u | in2 sum=%u min=%u max=%u | out0 min=%d max=%d out1 min=%d max=%d | times: sd=%u.%03ums preproc=%u.%03ums infer=%u.%03ums total=%u.%03ums\r\n",
             loop_cnt,
             frame_idx,
             frame_max,

@@ -1,0 +1,34 @@
+1st BL Modem Build DATE=Nov 30 2023, 0x0002000b
+Please input any key to enter X-Modem mode in 100 ms 
+waiting input key...
+slot flash_offset 0x00100000
+New MemDesp himax_sec_SB_image_process PASS
+set_memory_s_ns
+bl_status = 0x800000, HX_DSP_FLAG 1
+bl_status = 0x800000
+jump_addr=0x10000000
+Compiler Version: ARM GNU, 13.2.1 20231009
+wakeup_event=0x0,WakeupEvt1=0x0, freq=400000000
+ori_clk src info, 0x56100030=4077
+ori_clk src info, 0x56100034=0
+ori_clk src info, 0x56100038=c1a4
+clk src info, 0x56100030=4037
+clk src info, 0x56100034=0
+clk src info, 0x56100038=c1b8
+__GNUC 
+__mm_start_addr__ address: 3401f000
+YOLOv8n object detection
+TA[3401f000]
+Ethos-U55 device initialised
+model schema 3
+AUTO_POC_MODEL_PIPELINE_20260222
+initial done
+[loop=0][frame=1/50] center dx=0.000 dy=0.021 | mean dx=0.069 dy=0.006 | in1 sum=9989270 min=0 max=255 | in2 sum=10050128 min=0 max=255 | out0 min=-128 max=0 out1 min=-128 max=29 | times: sd=264.445ms preproc=7.252ms infer=196.896ms total=468.593ms
+[loop=5][frame=6/50] center dx=0.009 dy=0.019 | mean dx=0.064 dy=0.001 | in1 sum=10275589 min=0 max=255 | in2 sum=9431207 min=0 max=255 | out0 min=-128 max=0 out1 min=-128 max=32 | times: sd=113.455ms preproc=7.250ms infer=196.895ms total=317.600ms
+[loop=10][frame=11/50] center dx=0.002 dy=0.002 | mean dx=0.055 dy=0.016 | in1 sum=6075228 min=0 max=255 | in2 sum=5433672 min=0 max=255 | out0 min=-128 max=0 out1 min=-128 max=21 | times: sd=114.150ms preproc=7.250ms infer=196.896ms total=318.296ms
+[loop=15][frame=16/50] center dx=0.007 dy=0.007 | mean dx=0.052 dy=0.024 | in1 sum=4166098 min=0 max=255 | in2 sum=3710827 min=0 max=255 | out0 min=-128 max=0 out1 min=-128 max=17 | times: sd=115.491ms preproc=7.251ms infer=196.896ms total=319.637ms
+[loop=20][frame=21/50] center dx=0.002 dy=0.014 | mean dx=0.057 dy=0.017 | in1 sum=5659192 min=0 max=255 | in2 sum=5993071 min=0 max=255 | out0 min=-128 max=0 out1 min=-128 max=18 | times: sd=116.184ms preproc=7.253ms infer=196.896ms total=320.333ms
+[loop=25][frame=26/50] center dx=0.007 dy=0.014 | mean dx=0.059 dy=0.020 | in1 sum=4559953 min=0 max=255 | in2 sum=4409427 min=0 max=255 | out0 min=-128 max=0 out1 min=-128 max=15 | times: sd=116.888ms preproc=7.251ms infer=196.895ms total=321.035ms
+[loop=30][frame=31/50] center dx=0.002 dy=0.002 | mean dx=0.054 dy=0.022 | in1 sum=4576291 min=0 max=255 | in2 sum=4590120 min=0 max=255 | out0 min=-128 max=0 out1 min=-128 max=18 | times: sd=117.569ms preproc=7.252ms infer=196.897ms total=321.719ms
+[loop=35][frame=36/50] center dx=0.009 dy=0.004 | mean dx=0.063 dy=0.019 | in1 sum=6502491 min=0 max=255 | in2 sum=7218339 min=0 max=255 | out0 min=-128 max=0 out1 min=-128 max=20 | times: sd=118.917ms preproc=7.251ms infer=196.896ms total=323.064ms
+[loop=40][frame=41/50] center dx=0.009 dy=0.019 | mean dx=0.071 dy=0.009 | in1 sum=9607791 min=0 max=255 | in2 sum=9893302 min=0 max=255 | out0 min=-128 max=0 out1 min=-128 max=26 | times: sd=119.607ms preproc=7.252ms infer=196.895ms total=323.754ms

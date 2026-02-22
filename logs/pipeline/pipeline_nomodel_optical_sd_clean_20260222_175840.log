@@ -1,0 +1,25 @@
+1st BL Modem Build DATE=Nov 30 2023, 0x0002000b
+Please input any key to enter X-Modem mode in 100 ms 
+waiting input key...
+slot flash_offset 0x00100000
+New MemDesp himax_sec_SB_image_process PASS
+set_memory_s_ns
+bl_status = 0x800000, HX_DSP_FLAG 1
+bl_status = 0x800000
+jump_addr=0x10000000
+Compiler Version: ARM GNU, 13.2.1 20231009
+wakeup_event=0x0,WakeupEvt1=0x0, freq=400000000
+ori_clk src info, 0x56100030=4077
+ori_clk src info, 0x56100034=0
+ori_clk src info, 0x56100038=c1a4
+clk src info, 0x56100030=4037
+clk src info, 0x56100034=0
+clk src info, 0x56100038=c1b8
+__GNUC
+__mm_start_addr__ address: 3401f000
+Optical SD clean app start
+TA[3401f000], size=1711104
+Ethos-U55 device initialised
+model schema 3
+alloc raw buffer fail
+cv_yolov8n_ob_init fail

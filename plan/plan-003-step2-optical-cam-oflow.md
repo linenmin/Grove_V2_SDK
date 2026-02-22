@@ -94,6 +94,17 @@
 - `cam_input_init()`
 - `cam_get_frame_pair(uint8_t* frame_t, uint8_t* frame_t1)`
 
+建议直接新增文件（第一版）：
+
+- `io/camera/cam_input.cpp`
+- `io/camera/cam_input.h`
+
+并在 `pipeline/cvapp_yolov8n_ob.cpp` 做最小改造：
+
+1. 保留 `prepare_optical_flow_input(...)`、DWT 计时与日志逻辑不变  
+2. 把 SD 分支替换为 camera 双帧获取分支  
+3. 首版只保证稳定拿到连续两帧，不引入复杂异步队列
+
 实现建议：
 
 - 先做最小双缓冲：每轮拿到两帧 RGB888（或 YUV 转 RGB）
@@ -107,6 +118,15 @@ camera 版建议：
 - 初始化 sensor + datapath（参考 `tflm_yolov8_od.c`）
 - 进入循环：采集双帧 -> 推理 -> 输出
 - 先不引入复杂 event 分支，避免第一版过重
+
+文件级修改建议：
+
+- `app/tflm_yolov8_od.c`（新 app 内）：
+  - 增加 `cisdp_sensor_init()`、`cisdp_dp_init(...)`
+  - 在主循环中调用 `cv_yolov8n_ob_run(...)`
+- `tflm_yolov8_od.mk`（新 app 内）：
+  - 恢复 camera 所需依赖（`CIS_SUPPORT_INAPP`、`event_handler`、sensor 子目录）
+  - 首版固定 `CIS_SUPPORT_INAPP_MODEL = cis_ov5647`
 
 ## 3.4 输出定义（建议分阶段）
 
@@ -135,6 +155,12 @@ camera 版建议：
   - `loop`, `dx/dy`, `mean_dx/mean_dy`, `sd/preproc/infer/total`
 - 可选（可视化）：
   - `JPEG frame + meta`（借鉴 yolov8 UART web toolkit 方案）
+
+可视化输出建议（可直接复用现有链路）：
+
+- 参考 `tflm_yolov8_od/README.md` 的 `Send image and meta data by UART`
+- 复用 `send_result.cpp` 的 JSON + base64 编码与 `event_reply(...)`
+- 复用 `hx_drv_spi_mst_protocol_write_sp(..., DATA_TYPE_JPG / DATA_TYPE_META_...)`
 
 ---
 
@@ -191,6 +217,9 @@ camera 版建议：
 4) 一次改太多导致不可定位  
 - 严格按 M1->M2->M3 渐进
 
+5) “实时”定义不清导致预期偏差  
+- 当前目标定义为“在线连续处理（低帧率实时）”，不是 15/30 FPS 视频级实时
+
 ---
 
 ## 7. 下一步你该先做什么（建议）
@@ -203,3 +232,34 @@ camera 版建议：
 4. 先跑通串口文本输出，不急着上 web 可视化
 
 等 M1 跑通后，再开始 M2（接入 `send_result` + web toolkit）。
+
+---
+
+## 8. M1 验收清单（你执行时可直接照抄）
+
+- [ ] `optical_cam_oflow` 可编译通过
+- [ ] 设备启动后无 `CIS Init fail` / `DATAPATH Init fail`
+- [ ] 串口稳定输出 `initial done` 与 `loop` 日志
+- [ ] 能连续运行 2~3 分钟无崩溃
+- [ ] DWT 分项耗时仍可见（`sd/cam`, `preproc`, `infer`, `total`）
+
+---
+
+## 9. M1 执行进度（代码侧，2026-02-22）
+
+已完成（代码修改）：
+
+- 新建 `optical_cam_oflow`（基于 `optical_sd_clean`）
+- `.mk` 恢复 camera 依赖（`event_handler`、`CIS_SUPPORT_INAPP`、`cis_ov5647`）
+- 新增 `io/camera/cam_input.{h,cpp}`：
+  - `cam_input_init()`：完成 sensor/datapath 启动
+  - `cam_input_get_frame_pair()`：连续双帧采集
+  - 320x240 RGB planar -> 240x180 RGB888 中心裁剪
+- `pipeline/cvapp_yolov8n_ob.cpp` 输入路径从 SD 切到 camera
+- `app/tflm_yolov8_od.c` 文案与入口命名改为 camera 版本
+- `README.md` 更新为 `optical_cam_oflow` 说明
+
+待你手动验证（按你的流程执行）：
+
+- 编译、烧录、串口验收
+- 若失败优先做日志调试（定位 `CIS Init` / `DATAPATH` / 帧获取超时位置）

@@ -5,6 +5,7 @@
 extern "C" {
 #include "cisdp_sensor.h"
 #include "hx_drv_timer.h"
+#include "hx_drv_xdma.h"
 }
 
 #include "xprintf.h"
@@ -13,43 +14,33 @@ namespace {
 
 constexpr uint32_t kModelInW = 240;
 constexpr uint32_t kModelInH = 180;
-constexpr uint32_t kFrameWaitRetry = 100;
+constexpr uint32_t kFrameWaitRetry = 1000;
 constexpr uint32_t kFrameWaitDelayMs = 2;
+constexpr uint32_t kInterFrameDelayMs = 33;
 
 static bool g_inited = false;
 static bool g_pair_ready = false;
-static uint32_t g_last_sig = 0;
-
-static uint32_t frame_signature()
-{
-    uint32_t jpeg_sz = 0;
-    uint32_t jpeg_addr = 0;
-    cisdp_get_jpginfo(&jpeg_sz, &jpeg_addr);
-
-    const uint8_t *raw = reinterpret_cast<const uint8_t *>(app_get_raw_addr());
-    const uint32_t raw_sz = app_get_raw_sz();
-    uint32_t sig = jpeg_addr ^ (jpeg_sz << 1U) ^ (raw_sz << 3U);
-
-    // 取少量字节生成签名，判断是否出现新帧。
-    if (raw != nullptr && raw_sz >= 16U) {
-        for (uint32_t i = 0; i < 16U; ++i) {
-            sig = (sig << 5U) ^ (sig >> 2U) ^ raw[i];
-        }
-    }
-    return sig;
-}
+static bool g_first_frame_ready = false;
 
 static int wait_new_frame()
 {
-    for (uint32_t i = 0; i < kFrameWaitRetry; ++i) {
-        const uint32_t sig = frame_signature();
-        if (sig != g_last_sig) {
-            g_last_sig = sig;
-            return 0;
+    if (!g_first_frame_ready) {
+        uint8_t firstframe_cap = 0;
+        for (uint32_t i = 0; i < kFrameWaitRetry; ++i) {
+            if (hx_drv_xdma_get_WDMA2FirstFrameCapflag(&firstframe_cap) == XDMA_NO_ERROR &&
+                firstframe_cap == 1U) {
+                g_first_frame_ready = true;
+                break;
+            }
+            hx_drv_timer_cm55x_delay_ms(kFrameWaitDelayMs, TIMER_STATE_DC);
         }
-        hx_drv_timer_cm55x_delay_ms(kFrameWaitDelayMs, TIMER_STATE_DC);
+        if (!g_first_frame_ready) {
+            xprintf("wait first camera frame timeout\n");
+            return -1;
+        }
     }
-    return -1;
+    hx_drv_timer_cm55x_delay_ms(kInterFrameDelayMs, TIMER_STATE_DC);
+    return 0;
 }
 
 static int planar320x240_to_rgb240x180(uint8_t *dst, size_t dst_bytes)
@@ -128,7 +119,7 @@ int cam_input_init(void)
 
     cisdp_sensor_start();
 
-    g_last_sig = frame_signature();
+    g_first_frame_ready = false;
     g_pair_ready = false;
     g_inited = true;
     xprintf("camera input init done\n");
@@ -163,5 +154,6 @@ void cam_input_deinit(void)
     }
     cisdp_sensor_stop();
     g_inited = false;
+    g_first_frame_ready = false;
     g_pair_ready = false;
 }

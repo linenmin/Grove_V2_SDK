@@ -263,3 +263,161 @@ camera 版建议：
 
 - 编译、烧录、串口验收
 - 若失败优先做日志调试（定位 `CIS Init` / `DATAPATH` / 帧获取超时位置）
+
+---
+
+## 10. M1 调试闭环结果（增量，2026-02-22 晚）
+
+本轮按“先调试不绕过”执行了完整闭环：`定位 -> 打点 -> 复现 -> 修正 -> 回归 -> 清理临时调试代码`。
+
+### 10.1 阶段 A：首轮失败根因
+
+- 现象：`initial done` 可出现，但后续大量 `wait new camera frame timeout` / `camera frame pair fail`
+- 结论：camera 已启动，但“新帧检测逻辑”不稳定，导致误判为无新帧
+
+### 10.2 阶段 B：排查过程（关键证据）
+
+- 初期曾出现 `I2C err_code:-60`（后确认是摄像头连接方式问题）
+- 连接修正后，串口出现：
+  - `sensor_id=0x5647`
+  - `OV5647 Init Stream by app`
+  - `OV5647 on by app done`
+  - `camera input init done`
+- 说明：`cisdp_sensor_init()` 与 `cisdp_dp_init()` 已正常，问题收敛到“帧等待策略”
+
+### 10.3 阶段 C：代码修正（已落地）
+
+- 文件：`EPII_CM55M_APP_S/app/scenario_app/optical_cam_oflow/io/camera/cam_input.cpp`
+- 修正点：
+  1. 放弃“仅依赖 WDMA2 next idx 变化”作为新帧判据  
+  2. 改为先等 `hx_drv_xdma_get_WDMA2FirstFrameCapflag()==1`（首帧已到）  
+  3. 后续按固定帧间隔（`33ms`）节拍采样双帧（当前稳定基线，不是唯一方案）
+- 同时清理了临时调试打印：
+  - `EPII_CM55M_APP_S/app/scenario_app/optical_cam_oflow/cis_sensor/cis_ov5647/cisdp_sensor.c` 中临时 `[DBG][cis]` 行已删除
+
+### 10.4 阶段 D：最终回归结果（通过）
+
+- 通过日志关键词：
+  - `initial done`
+  - `[loop=`
+- 未再出现：
+  - `wait first camera frame timeout`
+  - `camera frame pair fail`
+  - `CIS Init fail`
+  - `DATAPATH Init fail`
+- 验证日志：
+  - `logs/pipeline/pipeline_nomodel_optical_cam_oflow_20260222_192244.log`
+
+---
+
+## 11. 下一步建议（M2 / M3）
+
+### M2（建议先做，可视化链路）
+
+1. 在 `optical_cam_oflow` 接入 `send_result` 风格输出（JPEG + meta）  
+2. 用 Himax web toolkit 联调可视化  
+3. 串口验收新增关键词：`DATA_TYPE_JPG` / `DATA_TYPE_META_*`（或你定义的发送成功标志）
+
+### M3（稳定性与性能）
+
+1. 连续运行 10~30 分钟，统计失败率（目标：0）  
+2. 记录 `sd/cam`, `preproc`, `infer`, `total` 均值与 P95  
+3. 若要提速，再分阶段评估：
+   - 输入分辨率/裁剪策略
+   - 帧间隔（33ms）是否可按负载自适应
+   - 日志打印频率对吞吐的影响
+
+### M2 当前执行进度（增量）
+
+- 已在 `optical_cam_oflow` 接入可视化发送链路（`JPEG + META_YOLOV8_OB_DATA`）：
+  - 初始化阶段打开 SPI master 通道（`SPI_SEN_PIC_CLK`）
+  - 推理循环中发送当前 JPEG 与 meta payload
+- 串口观测到稳定发送标志：
+  - `viz tx ok loop=... jpeg=...`
+- 最新验收日志：
+  - `logs/pipeline/pipeline_nomodel_optical_cam_oflow_20260222_193302.log`
+  - 关键词命中：`initial done`、`[loop=`、`viz tx ok`
+
+---
+
+## 12. 双帧采样策略可选方案（供选择）
+
+问题：首帧等待是必要的；但首帧之后是否必须固定间隔采样？
+
+结论：**不必须**。固定间隔只是当前最稳的基线策略。下面给出可选项。
+
+### 方案 A：固定间隔采样（当前实现）
+
+定义：
+
+- 首帧到达后，每轮按固定延迟（当前 `33ms`）取下一帧
+
+优点：
+
+- 实现最简单、稳定性高、易调试  
+- 对底层帧索引不稳定场景容错好  
+- 串口日志节奏可预期
+
+缺点：
+
+- 不是“真正按新帧到达驱动”，可能拿到重复帧或跳帧  
+- 端到端时延受固定 delay 影响  
+- 在低光/曝光变化时，时间一致性不一定最优
+
+适用：
+
+- M1/M2 阶段优先“先稳定跑通”
+
+### 方案 B：帧到达事件/索引驱动采样（推荐的长期方案）
+
+定义：
+
+- 以 datapath/WDMA 的“新帧事件”或可靠帧计数变化作为触发，取 `(t, t+1)`
+
+优点：
+
+- 时间一致性更好，真正按新帧推进  
+- 可减少重复帧，提高有效信息密度  
+- 更利于后续性能优化与可视化同步
+
+缺点：
+
+- 对底层事件链路依赖高，调试复杂  
+- 需要确认 `evt_datapath`/XDMA 状态在本 app 下的可靠性
+
+适用：
+
+- M3 阶段追求“更优时序质量”与更高上限
+
+### 方案 C：自适应间隔采样（折中）
+
+定义：
+
+- 基于 `total/infer` 运行时耗时动态调整采样间隔
+
+优点：
+
+- 兼顾稳定性与吞吐，易逐步引入  
+- 在负载变化时可自动避免拥塞
+
+缺点：
+
+- 参数需要调优（上下限、调节步长）  
+- 仍不如纯事件驱动精确
+
+适用：
+
+- 当方案 A 稳定、方案 B 实施成本高时的中间态
+
+### 推荐执行顺序
+
+1. **短期（现在）**：保留方案 A，先推进 M2 可视化  
+2. **中期**：做方案 B 的小实验分支（仅替换采样触发，不动推理主干）  
+3. **保底**：若 B 不稳定，转方案 C 做工程折中
+
+### 你现在可以直接二选一
+
+- 选项 1：继续当前方案 A（最快推进 M2）  
+- 选项 2：先做方案 B PoC（优先时序正确性）
+
+我建议：**先选项 1，把可视化链路打通；并行准备选项 2 的小实验分支。**

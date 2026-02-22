@@ -8,13 +8,26 @@
 #include "common_config.h"
 #include "cvapp_yolov8n_ob.h"
 #include "hx_drv_pmu.h"
+#include "hx_drv_spi.h"
 #include "hx_drv_scu.h"
 #include "hx_drv_swreg_aon.h"
 #include "memory_manage.h"
 #include "powermode.h"
+#include "spi_master_protocol.h"
 #include "spi_eeprom_comm.h"
 #include "tflm_yolov8_od.h"
 #include "xprintf.h"
+
+static void spi_m_pinmux_cfg_for_viz(void)
+{
+    SCU_PINMUX_CFG_T pinmux_cfg;
+    hx_drv_scu_get_all_pinmux_cfg(&pinmux_cfg);
+    pinmux_cfg.pin_pb2 = SCU_PB2_PINMUX_SPI_M_DO_1;
+    pinmux_cfg.pin_pb3 = SCU_PB3_PINMUX_SPI_M_DI_1;
+    pinmux_cfg.pin_pb4 = SCU_PB4_PINMUX_SPI_M_SCLK_1;
+    pinmux_cfg.pin_pb11 = SCU_PB11_PINMUX_SPI_M_CS;
+    hx_drv_scu_set_all_pinmux_cfg(&pinmux_cfg, 1);
+}
 
 static void optical_cam_runtime_init(void)
 {
@@ -47,6 +60,13 @@ static void optical_cam_runtime_init(void)
     xprintf("clk src info, 0x56100030=%x\n", EPII_get_memory(0x56100030));
     xprintf("clk src info, 0x56100034=%x\n", EPII_get_memory(0x56100034));
     xprintf("clk src info, 0x56100038=%x\n", EPII_get_memory(0x56100038));
+
+    spi_m_pinmux_cfg_for_viz();
+    if (hx_drv_spi_mst_open_speed(SPI_SEN_PIC_CLK) != 0) {
+        xprintf("viz spi master init fail\n");
+    } else {
+        xprintf("viz spi master init ok, clk=%d\n", SPI_SEN_PIC_CLK);
+    }
 
 #ifdef __GNU__
     extern char __mm_start_addr__;

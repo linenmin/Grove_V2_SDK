@@ -79,6 +79,11 @@ void SSPI_CS_GPIO_Dir(bool setDirOut)
 }
 }
 
+extern "C" {
+#include "cisdp_sensor.h"
+#include "spi_master_protocol.h"
+}
+
 namespace {
 
 // 注意：1650*1024 是当前已验证的稳定上限基线，后续通过实测再上探。
@@ -90,6 +95,7 @@ static ethosu_driver ethosu_drv;
 static tflite::MicroInterpreter *yolov8n_ob_int_ptr = nullptr;
 static TfLiteTensor *yolov8n_ob_input = nullptr;
 static TfLiteTensor *yolov8n_ob_output = nullptr;
+static uint32_t g_viz_fail_cnt = 0;
 
 static const int RAW_FRAME_BYTES =
     YOLOV8_OB_INPUT_TENSOR_WIDTH * YOLOV8_OB_INPUT_TENSOR_HEIGHT * 3;
@@ -159,6 +165,42 @@ static int _arm_npu_init(bool security_enable, bool privilege_enable)
 
     xprintf("Ethos-U55 device initialised\n");
     return 0;
+}
+
+static void publish_viz_payload(struct_yolov8_ob_algoResult *algo, uint32_t total_us, int loop_cnt)
+{
+    uint32_t jpeg_sz = 0;
+    uint32_t jpeg_addr = 0;
+    cisdp_get_jpginfo(&jpeg_sz, &jpeg_addr);
+    if (jpeg_addr == 0 || jpeg_sz == 0) {
+        return;
+    }
+
+    const int jpg_ret = hx_drv_spi_mst_protocol_write_sp(jpeg_addr, jpeg_sz, DATA_TYPE_JPG);
+    if (jpg_ret != 0) {
+        if ((g_viz_fail_cnt % 20U) == 0U) {
+            xprintf("viz jpg tx fail ret=%d size=%u addr=0x%x\n", jpg_ret, jpeg_sz, jpeg_addr);
+        }
+        g_viz_fail_cnt++;
+        return;
+    }
+
+    if (algo != nullptr) {
+        algo->algo_tick = total_us;
+        const int meta_ret = hx_drv_spi_mst_protocol_write_sp(
+            (uint32_t)algo, sizeof(struct_yolov8_ob_algoResult), DATA_TYPE_META_YOLOV8_OB_DATA);
+        if (meta_ret != 0) {
+            if ((g_viz_fail_cnt % 20U) == 0U) {
+                xprintf("viz meta tx fail ret=%d\n", meta_ret);
+            }
+            g_viz_fail_cnt++;
+            return;
+        }
+    }
+
+    if ((loop_cnt % 20) == 0) {
+        xprintf("viz tx ok loop=%d jpeg=%u\n", loop_cnt, jpeg_sz);
+    }
 }
 
 }  // namespace
@@ -304,6 +346,8 @@ int cv_yolov8n_ob_run(struct_yolov8_ob_algoResult *algoresult_yolov8n_ob)
     g_ctx.preproc_us = ob_perf_elapsed_us(&t_preproc_start, &t_preproc_end);
     g_ctx.infer_us = ob_perf_elapsed_us(&t_infer_start, &t_infer_end);
     g_ctx.total_us = ob_perf_elapsed_us(&t_total_start, &t_total_end);
+
+    publish_viz_payload(algoresult_yolov8n_ob, g_ctx.total_us, g_ctx.loop_cnt);
 
     const float out_scale =
         ((TfLiteAffineQuantization *)(yolov8n_ob_output->quantization.params))->scale->data[0];

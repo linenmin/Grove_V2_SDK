@@ -156,16 +156,11 @@ void ob_log_col_mean_mag_sample(const int8_t *out_data,
     }
 
     const int stride = out_c;
-    /* 每列采样，步长 sample_step，最多 24 个值避免串口溢出 */
-    const int max_cols = (out_w + sample_step - 1) / sample_step;
-    const int n_cols = (max_cols > 24) ? 24 : max_cols;
+    /* plan-007: 改为密集采样连续列，消除混叠掩盖。输出前 16 列 */
+    const int n_cols = (out_w > 16) ? 16 : out_w;
 
-    xprintf("[col_mean_mag] step=%d", sample_step);
-    for (int ci = 0; ci < n_cols; ++ci) {
-        const int c = ci * sample_step;
-        if (c >= out_w) {
-            break;
-        }
+    xprintf("[col_mean_mag] step=1");
+    for (int c = 0; c < n_cols; ++c) {
         double sum_mag = 0.0;
         for (int r = 0; r < out_h; ++r) {
             const int idx = (r * out_w + c) * stride;
@@ -176,5 +171,21 @@ void ob_log_col_mean_mag_sample(const int8_t *out_data,
         const int mean_mag_int = (int)((sum_mag / (double)out_h) * 1000.0);
         xprintf(" c%d=%d", c, mean_mag_int);
     }
+    xprintf(" |");
+    /* 附加中间区域的几列，帮助确认 */
+    const int mid_c = out_w / 2;
+    const int max_mid = (mid_c + 8 > out_w) ? out_w : mid_c + 8;
+    for (int c = mid_c; c < max_mid; ++c) {
+        double sum_mag = 0.0;
+        for (int r = 0; r < out_h; ++r) {
+            const int idx = (r * out_w + c) * stride;
+            const float dx = ((float)out_data[idx + 0] - (float)out_zp) * out_scale;
+            const float dy = ((float)out_data[idx + 1] - (float)out_zp) * out_scale;
+            sum_mag += (double)sqrtf(dx * dx + dy * dy);
+        }
+        const int mean_mag_int = (int)((sum_mag / (double)out_h) * 1000.0);
+        xprintf(" c%d=%d", c, mean_mag_int);
+    }
+
     xprintf("\r\n");
 }

@@ -8,6 +8,11 @@
 #define FLOW_VIZ_FIXED_SCALE 1
 #endif
 
+// 1=生成渐变测试图以检查后续 JPEG/Web 链路线条，0=正常渲染
+#ifndef FLOW_VIZ_TEST_PATTERN
+#define FLOW_VIZ_TEST_PATTERN 1
+#endif
+
 void flow_render_to_gray(uint8_t *out_gray,
                         const int8_t *flow_data,
                         int out_w,
@@ -21,6 +26,16 @@ void flow_render_to_gray(uint8_t *out_gray,
     }
 
     const int pixels = out_w * out_h;
+
+#if FLOW_VIZ_TEST_PATTERN
+    for (int y = 0; y < out_h; ++y) {
+        for (int x = 0; x < out_w; ++x) {
+            // 平滑渐变测试模式，便于检测垂直条纹问题是否源自后续渲染管线
+            out_gray[y * out_w + x] = (uint8_t)(x % 256);
+        }
+    }
+    return;
+#endif
 
 #if FLOW_VIZ_FIXED_SCALE
     const float kFixedScale = 80.0f;

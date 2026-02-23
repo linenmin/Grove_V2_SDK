@@ -308,4 +308,10 @@
   - 用户反馈：挥手时黑线随挥手频率闪动，延迟低 → flow 对运动有响应，链路正常
   - 新建 **plan-007-flow-stripe-debug.md** 用于条纹根因迭代调试
 
+  **(2026-02-23 更新：条纹根源已破案！)**
+  根据 **plan-007** 的彻底排查，在排除了 JPEG MCU 拼接和压缩算法导致的伪影后，我们在设备上引入了测试图并将 UART 列采样统计从 `step=8` 激进地改为 `step=1`（连读 16 列）。
+  结论证实：模型直接输出的 `flow_data` （使用 `sram_test_modified_vela.tflite` 模型）本身含有一个**横向 8 像素为周期的强烈高频波浪式振荡**的假象。
+  这说明：并非是 C++ 端和 Web 端的渲染有错误，而是 **上层模型训练的 UpSampling 参数或 TFLite 转换到 Ethos-U （转 Vela）的张量布局填充（如 padding bytes 代入）导致了强烈的 Checkerboard Artifacts（棋盘格伪影/条纹）**。
+  目前已暂停在 C++ 层面对可视化条纹的纠缠，将此 Issue 交还至模型侧重新排查上采样环节和 Vela 转换布局。
+
 ---

@@ -1,7 +1,7 @@
 override SCENARIO_APP_SUPPORT_LIST := $(APP_TYPE)
 override SCENARIO_APP_SUPPORT_LIST += $(APP_TYPE)/app
 override SCENARIO_APP_SUPPORT_LIST += $(APP_TYPE)/pipeline
-override SCENARIO_APP_SUPPORT_LIST += $(APP_TYPE)/io
+# optical_cam_oflow 使用 camera 输入，不编译 io/ob_sd_frame（SD 读帧）
 override SCENARIO_APP_SUPPORT_LIST += $(APP_TYPE)/io/camera
 override SCENARIO_APP_SUPPORT_LIST += $(APP_TYPE)/perf
 override SCENARIO_APP_SUPPORT_LIST += $(APP_TYPE)/debug

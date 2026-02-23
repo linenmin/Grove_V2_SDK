@@ -740,7 +740,7 @@ int cv_yolov8n_ob_run(struct_yolov8_ob_algoResult *algoresult_yolov8n_ob)
                             out_scale,
                             &flow_summary);
 
-    if (ob_should_log(g_ctx.loop_cnt, g_ctx.log_print_interval)) {
+        if (ob_should_log(g_ctx.loop_cnt, g_ctx.log_print_interval)) {
         ob_log_infer_line(g_ctx.loop_cnt,
                           0,
                           0,
@@ -751,14 +751,6 @@ int cv_yolov8n_ob_run(struct_yolov8_ob_algoResult *algoresult_yolov8n_ob)
                           g_ctx.preproc_us,
                           g_ctx.infer_us,
                           g_ctx.total_us);
-        /* plan-007 H1: 列均值采样，验证条纹周期 */
-        ob_log_col_mean_mag_sample(out_data,
-                                   g_model_out_w,
-                                   g_model_out_h,
-                                   g_model_out_c,
-                                   out_zp,
-                                   out_scale,
-                                   8);
     }
 
     g_ctx.loop_cnt++;

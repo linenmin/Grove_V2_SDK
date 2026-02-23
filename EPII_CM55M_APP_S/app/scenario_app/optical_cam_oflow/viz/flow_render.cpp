@@ -5,12 +5,12 @@
 
 // 1=固定 scale（plan-007 H2），0=per-frame max 归一化
 #ifndef FLOW_VIZ_FIXED_SCALE
-#define FLOW_VIZ_FIXED_SCALE 1
+#define FLOW_VIZ_FIXED_SCALE 0
 #endif
 
 // 1=生成渐变测试图以检查后续 JPEG/Web 链路线条，0=正常渲染
 #ifndef FLOW_VIZ_TEST_PATTERN
-#define FLOW_VIZ_TEST_PATTERN 1
+#define FLOW_VIZ_TEST_PATTERN 0
 #endif
 
 void flow_render_to_gray(uint8_t *out_gray,

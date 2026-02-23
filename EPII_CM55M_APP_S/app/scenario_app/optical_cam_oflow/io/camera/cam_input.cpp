@@ -99,9 +99,10 @@ static int planar_to_rgb_model_input(uint8_t *dst, size_t dst_bytes)
             }
             const uint32_t src = src_y * raw_w + src_x;
             const uint32_t dst_idx = (y * g_model_in_w + x) * 3U;
-            dst[dst_idx + 0U] = plane_r[src];
+            /* plan-007: BGR 输出以匹配 run_sram_test.py 校准（cv2.imread 默认 BGR） */
+            dst[dst_idx + 0U] = plane_b[src];
             dst[dst_idx + 1U] = plane_g[src];
-            dst[dst_idx + 2U] = plane_b[src];
+            dst[dst_idx + 2U] = plane_r[src];
         }
     }
     return 0;

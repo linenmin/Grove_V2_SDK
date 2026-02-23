@@ -17,6 +17,10 @@ APPL_DEFINES += -DEVT_DATAPATH
 # 保留串口日志输出。
 APPL_DEFINES += -DUART_SEND_ALOGO_RESEULT
 APPL_DEFINES += -DVIZ_UART_MODE
+# plan-008: make VIZ_CAMERA=1 时强制发送摄像头画面，用于 agent 可见调试闭环
+ifneq ($(VIZ_CAMERA),)
+APPL_DEFINES += -DFORCE_VIZ_CAMERA_JPEG
+endif
 
 # 摄像头输入需要事件模块定义与数据路径配置。
 EVENTHANDLER_SUPPORT = event_handler

@@ -9,6 +9,9 @@ CAPTURE_SECONDS="12"
 MODEL_ARG=""
 NO_CLEAN="0"
 SKIP_BUILD="0"
+VIZ_CAMERA=""
+EXTRACT_FRAMES="0"
+MAX_FRAMES="10"
 KEYWORDS=("initial done")
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -30,6 +33,9 @@ Options:
   --model-arg "FILE ADDR OFF"    Required when mode=with-model
   --skip-build                   Skip make + image generation
   --no-clean                     Do not run make clean
+  --viz-camera                   Build with VIZ_CAMERA=1 (send camera JPEG, not flow)
+  --extract-frames               After capture, extract INVOKE images to logs/flow_frames/latest
+  --max-frames N                 Max frames to extract. Default: 10
   -h, --help                     Show this help
 
 Examples:
@@ -55,6 +61,9 @@ while [[ $# -gt 0 ]]; do
     --model-arg) MODEL_ARG="$2"; shift 2 ;;
     --skip-build) SKIP_BUILD="1"; shift ;;
     --no-clean) NO_CLEAN="1"; shift ;;
+    --viz-camera) VIZ_CAMERA="1"; shift ;;
+    --extract-frames) EXTRACT_FRAMES="1"; shift ;;
+    --max-frames) MAX_FRAMES="$2"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
     *)
       echo "Unknown argument: $1" >&2
@@ -115,12 +124,12 @@ LOG_PATH="${LOG_DIR}/pipeline_${MODE}_${APP_TYPE}_${STAMP}.log"
 mkdir -p "${LOG_DIR}"
 
 if [[ "${SKIP_BUILD}" == "0" ]]; then
-  echo "[1/4] build app (${APP_TYPE})..."
+  echo "[1/4] build app (${APP_TYPE})${VIZ_CAMERA:+ VIZ_CAMERA=1}..."
   pushd "${REPO_ROOT}/EPII_CM55M_APP_S" >/dev/null
   if [[ "${NO_CLEAN}" == "0" ]]; then
     make clean APP_TYPE="${APP_TYPE}"
   fi
-  make -s --no-print-directory -j4 APP_TYPE="${APP_TYPE}"
+  make -s --no-print-directory -j4 APP_TYPE="${APP_TYPE}" ${VIZ_CAMERA:+VIZ_CAMERA=1}
   popd >/dev/null
 
   echo "[2/4] generate image..."
@@ -163,6 +172,19 @@ for kw in "${KEYWORDS[@]}"; do
 done
 
 "${CAPTURE_CMD[@]}"
+
+if [[ "${EXTRACT_FRAMES}" == "1" && -f "${LOG_PATH}" ]]; then
+  echo "[5/5] extract INVOKE frames from log..."
+  FRAMES_DIR="${REPO_ROOT}/logs/flow_frames/latest"
+  if python3 "${REPO_ROOT}/scripts/extract_invoke_frames_from_log.py" \
+    --log "${LOG_PATH}" \
+    --output-dir "${FRAMES_DIR}" \
+    --max-frames "${MAX_FRAMES}"; then
+    echo "[info] frames=${FRAMES_DIR}"
+  else
+    echo "[warn] extract returned non-zero, check log for INVOKE"
+  fi
+fi
 
 echo
 echo "[done] pipeline success"

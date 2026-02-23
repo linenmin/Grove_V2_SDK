@@ -110,6 +110,34 @@ python3 scripts/extract_flow_frames_from_log.py \
 
 ## 8. 验收标准
 
-- [ ] 给定 pipeline log，能提取至少 1 帧有效 JPEG/PNG
-- [ ] Agent 能通过 `Read` 工具读取提取出的图像
-- [ ] 一次 pipeline 执行后，Agent 可根据图像内容做出「继续调 kFixedScale / 换模型 / 其他」的判断，无需人工反馈
+- [x] 给定 pipeline log，能提取至少 1 帧有效 JPEG/PNG
+- [x] Agent 能通过 `Read` 工具读取提取出的图像
+- [x] 一次 pipeline 执行后，Agent 可根据图像内容做出判断，无需人工反馈
+
+## 9. 实施记录（2026-02-23）
+
+### 9.1 已实现
+
+- **extract_invoke_frames_from_log.py**：从 pipeline log 解析 INVOKE JSON，提取 base64 图像，保存为 PNG
+- **FORCE_VIZ_CAMERA_JPEG**：`make VIZ_CAMERA=1` 时强制发送摄像头画面（非光流）
+- **run_optical_pipeline.sh**：新增 `--viz-camera`、`--extract-frames`、`--max-frames`
+
+### 9.2 验证命令（摄像头画面 + 提取）
+
+```bash
+bash .cursor/skills/we2-optical-sd-pipeline/scripts/run_optical_pipeline.sh \
+  --mode nomodel \
+  --app-type optical_cam_oflow \
+  --viz-camera \
+  --extract-frames \
+  --max-frames 5 \
+  --capture-seconds 20 \
+  --keyword "initial done" \
+  --keyword '"name": "INVOKE"'
+```
+
+### 9.3 验证结果
+
+- 提取 5 帧至 `logs/flow_frames/latest/`
+- Agent 读取 frame_002.png 可分辨出摄像头画面（暗光、人脸/头部轮廓）
+- **调试闭环已打通**：Agent 可自主烧录 → 抓 log → 提取帧 → 读取图像验证

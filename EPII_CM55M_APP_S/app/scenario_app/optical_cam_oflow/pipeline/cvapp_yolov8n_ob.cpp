@@ -329,6 +329,8 @@ static void publish_viz_payload(struct_yolov8_ob_algoResult *algo,
         (total_us <= (UINT32_MAX / 400U)) ? (total_us * 400U) : UINT32_MAX;
 
     // 阶段 D：有 flow 输出时优先发送光流渲染图
+    // FORCE_VIZ_CAMERA_JPEG：强制走摄像头分支，用于 agent 可见调试闭环（plan-008）
+#if !defined(FORCE_VIZ_CAMERA_JPEG) || (FORCE_VIZ_CAMERA_JPEG == 0)
     if (flow_data != nullptr && flow_w > 0 && flow_h > 0 &&
         flow_w * flow_h <= kFlowVizMaxPixels) {
         flow_render_to_gray(g_flow_viz_gray,
@@ -368,6 +370,7 @@ static void publish_viz_payload(struct_yolov8_ob_algoResult *algo,
             return;
         }
     }
+#endif
 
     const uint32_t jpeg_base = app_get_jpeg_addr();
     uint32_t jpeg_addr = 0U;

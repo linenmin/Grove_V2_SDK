@@ -421,3 +421,21 @@ camera 版建议：
 - 选项 2：先做方案 B PoC（优先时序正确性）
 
 我建议：**先选项 1，把可视化链路打通；并行准备选项 2 的小实验分支。**
+
+---
+
+### M2 可视化调试（2025-02 续）：Himax 页面无输出
+
+**现象**：Connect 成功，Preview / Device log 无任何输出。
+
+**根因与修改**：
+
+1. **握手不完整**：官方 app 会发 NAME? / VER? / ID? / **INFO?** / **MODEL?** 五条；页面可能等齐再解析。  
+   - 在 `viz/viz_uart.cpp` 中补发 INFO?、MODEL?（与官方格式一致）。
+
+2. **主机命令未响应**：官方流程中，主机点击「uart send」会发 `0xFF`，设备据此切到 UART 并回送握手。  
+   - 在 `viz_uart.cpp` 中增加 `viz_uart_poll_host_cmd()`：非阻塞读 1 字节，若为 0xFF/0xFE/0xFD 则立即回送完整五条握手。  
+   - 在 `pipeline/cvapp_yolov8n_ob.cpp` 的 `publish_viz_payload` 中，在发握手前调用 `viz_uart_poll_host_cmd()`。
+
+**验证**：WSL 下 no-model 烧录 + 串口抓取，关键字 `initial done`、`"name": "NAME?"`、`"name": "INVOKE"`、`"name": "MODEL?"` 均命中。  
+**请你复测**：Windows 下 detach 串口 → 打开 Himax 页面 → 连接设备 → 在 Process 页点击 **「uart send」** → 观察 Preview / Device log 是否出现画面与日志。

@@ -1,6 +1,7 @@
 #include "ob_debug_stats.h"
 
 #include "xprintf.h"
+#include <math.h>
 
 void ob_compute_checksum(const uint8_t *buf, size_t len, ob_checksum_stats_t *stats)
 {
@@ -30,19 +31,21 @@ void ob_compute_checksum(const uint8_t *buf, size_t len, ob_checksum_stats_t *st
 void ob_compute_flow_summary(const int8_t *out_data,
                              int out_w,
                              int out_h,
+                             int out_c,
                              int out_zp,
                              float out_scale,
                              ob_flow_summary_t *summary)
 {
-    if (out_data == nullptr || summary == nullptr || out_w <= 0 || out_h <= 0) {
+    if (out_data == nullptr || summary == nullptr || out_w <= 0 || out_h <= 0 || out_c < 2) {
         return;
     }
 
     const int pixels = out_w * out_h;
     const int center_idx = (out_h / 2) * out_w + (out_w / 2);
+    const int stride = out_c;
 
-    const float dx_f = ((float)out_data[center_idx * 4 + 0] - out_zp) * out_scale;
-    const float dy_f = ((float)out_data[center_idx * 4 + 1] - out_zp) * out_scale;
+    const float dx_f = ((float)out_data[center_idx * stride + 0] - out_zp) * out_scale;
+    const float dy_f = ((float)out_data[center_idx * stride + 1] - out_zp) * out_scale;
 
     int64_t sum_dx = 0;
     int64_t sum_dy = 0;
@@ -52,8 +55,8 @@ void ob_compute_flow_summary(const int8_t *out_data,
     int8_t out1_max = -128;
 
     for (int i = 0; i < pixels; ++i) {
-        const int8_t v0 = out_data[i * 4 + 0];
-        const int8_t v1 = out_data[i * 4 + 1];
+        const int8_t v0 = out_data[i * stride + 0];
+        const int8_t v1 = out_data[i * stride + 1];
 
         sum_dx += (int)v0 - out_zp;
         sum_dy += (int)v1 - out_zp;
@@ -138,4 +141,40 @@ void ob_log_infer_line(int loop_cnt,
             infer_us % 1000,
             total_us / 1000,
             total_us % 1000);
+}
+
+void ob_log_col_mean_mag_sample(const int8_t *out_data,
+                                int out_w,
+                                int out_h,
+                                int out_c,
+                                int out_zp,
+                                float out_scale,
+                                int sample_step)
+{
+    if (out_data == nullptr || out_w <= 0 || out_h <= 0 || out_c < 2 || sample_step <= 0) {
+        return;
+    }
+
+    const int stride = out_c;
+    /* 每列采样，步长 sample_step，最多 24 个值避免串口溢出 */
+    const int max_cols = (out_w + sample_step - 1) / sample_step;
+    const int n_cols = (max_cols > 24) ? 24 : max_cols;
+
+    xprintf("[col_mean_mag] step=%d", sample_step);
+    for (int ci = 0; ci < n_cols; ++ci) {
+        const int c = ci * sample_step;
+        if (c >= out_w) {
+            break;
+        }
+        double sum_mag = 0.0;
+        for (int r = 0; r < out_h; ++r) {
+            const int idx = (r * out_w + c) * stride;
+            const float dx = ((float)out_data[idx + 0] - (float)out_zp) * out_scale;
+            const float dy = ((float)out_data[idx + 1] - (float)out_zp) * out_scale;
+            sum_mag += (double)sqrtf(dx * dx + dy * dy);
+        }
+        const int mean_mag_int = (int)((sum_mag / (double)out_h) * 1000.0);
+        xprintf(" c%d=%d", c, mean_mag_int);
+    }
+    xprintf("\r\n");
 }

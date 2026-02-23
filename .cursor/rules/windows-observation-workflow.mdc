@@ -1,0 +1,22 @@
+---
+description: Windows 观察 vs WSL2 调试的流程区分
+alwaysApply: true
+---
+
+# Windows 观察 vs WSL2 调试
+
+## 需要用户到 Windows 端查看可视化时
+
+（如 Himax AI Web Toolkit 预览、串口在 Windows 上等）
+
+1. **先执行烧录流程**：运行 flash pipeline
+2. **再发送 Discord 通知**：烧录完成后，通过 Discord webhook 通知用户
+3. **最后请用户在 Windows 端观察**
+
+不要直接让用户去 Windows 观察而不先烧录。
+
+## 纯 WSL2 内调试时
+
+（如 build、串口 capture、日志分析等）
+
+可以自行运行命令，无需等待用户手动执行。

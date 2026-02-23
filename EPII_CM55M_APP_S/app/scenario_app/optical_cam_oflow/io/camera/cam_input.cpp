@@ -6,25 +6,27 @@ extern "C" {
 #include "cisdp_sensor.h"
 #include "hx_drv_timer.h"
 #include "hx_drv_xdma.h"
+#include "sensor_dp_lib.h"
 }
 
 #include "xprintf.h"
 
 namespace {
 
-constexpr uint32_t kModelInW = 240;
-constexpr uint32_t kModelInH = 180;
 constexpr uint32_t kFrameWaitRetry = 1000;
 constexpr uint32_t kFrameWaitDelayMs = 2;
 constexpr uint32_t kInterFrameDelayMs = 33;
 
 static bool g_inited = false;
-static bool g_pair_ready = false;
 static bool g_first_frame_ready = false;
+static uint32_t g_model_in_w = 0U;
+static uint32_t g_model_in_h = 0U;
 
 static int wait_new_frame()
 {
     if (!g_first_frame_ready) {
+        // 某些配置下首帧需要手动 retrigger 才会推进 first-frame flag。
+        sensordplib_retrigger_capture();
         uint8_t firstframe_cap = 0;
         for (uint32_t i = 0; i < kFrameWaitRetry; ++i) {
             if (hx_drv_xdma_get_WDMA2FirstFrameCapflag(&firstframe_cap) == XDMA_NO_ERROR &&
@@ -35,15 +37,23 @@ static int wait_new_frame()
             hx_drv_timer_cm55x_delay_ms(kFrameWaitDelayMs, TIMER_STATE_DC);
         }
         if (!g_first_frame_ready) {
-            xprintf("wait first camera frame timeout\n");
-            return -1;
+            xprintf("wait first camera frame timeout, fallback to delay mode\n");
+            hx_drv_timer_cm55x_delay_ms(kInterFrameDelayMs, TIMER_STATE_DC);
+            g_first_frame_ready = true;
+            return 0;
         }
+        // 首帧就绪后再触发下一帧，保证首次输出是完整 frame。
+        sensordplib_retrigger_capture();
+        hx_drv_timer_cm55x_delay_ms(kInterFrameDelayMs, TIMER_STATE_DC);
+        return 0;
     }
+
+    sensordplib_retrigger_capture();
     hx_drv_timer_cm55x_delay_ms(kInterFrameDelayMs, TIMER_STATE_DC);
     return 0;
 }
 
-static int planar320x240_to_rgb240x180(uint8_t *dst, size_t dst_bytes)
+static int planar_to_rgb_model_input(uint8_t *dst, size_t dst_bytes)
 {
     const uint32_t raw_w = app_get_raw_width();
     const uint32_t raw_h = app_get_raw_height();
@@ -54,11 +64,15 @@ static int planar320x240_to_rgb240x180(uint8_t *dst, size_t dst_bytes)
     if (dst == nullptr || raw == nullptr) {
         return -1;
     }
-    if (raw_c != 3U || raw_w < kModelInW || raw_h < kModelInH) {
+    if (raw_c != 3U || raw_w == 0U || raw_h == 0U) {
         xprintf("cam raw format unsupported: w=%u h=%u c=%u\n", raw_w, raw_h, raw_c);
         return -1;
     }
-    if (dst_bytes < static_cast<size_t>(kModelInW) * kModelInH * 3U) {
+    if (g_model_in_w == 0U || g_model_in_h == 0U) {
+        xprintf("cam model input size invalid: w=%u h=%u\n", g_model_in_w, g_model_in_h);
+        return -1;
+    }
+    if (dst_bytes < static_cast<size_t>(g_model_in_w) * g_model_in_h * 3U) {
         return -1;
     }
 
@@ -72,13 +86,19 @@ static int planar320x240_to_rgb240x180(uint8_t *dst, size_t dst_bytes)
     const uint8_t *plane_g = raw + plane_sz;
     const uint8_t *plane_r = raw + plane_sz * 2U;
 
-    const uint32_t crop_x = (raw_w - kModelInW) / 2U;
-    const uint32_t crop_y = (raw_h - kModelInH) / 2U;
-
-    for (uint32_t y = 0; y < kModelInH; ++y) {
-        for (uint32_t x = 0; x < kModelInW; ++x) {
-            const uint32_t src = (crop_y + y) * raw_w + (crop_x + x);
-            const uint32_t dst_idx = (y * kModelInW + x) * 3U;
+    // 统一缩放到模型输入尺寸，兼容 320x240/160x120 等 raw 尺寸。
+    for (uint32_t y = 0; y < g_model_in_h; ++y) {
+        uint32_t src_y = (y * raw_h) / g_model_in_h;
+        if (src_y >= raw_h) {
+            src_y = raw_h - 1U;
+        }
+        for (uint32_t x = 0; x < g_model_in_w; ++x) {
+            uint32_t src_x = (x * raw_w) / g_model_in_w;
+            if (src_x >= raw_w) {
+                src_x = raw_w - 1U;
+            }
+            const uint32_t src = src_y * raw_w + src_x;
+            const uint32_t dst_idx = (y * g_model_in_w + x) * 3U;
             dst[dst_idx + 0U] = plane_r[src];
             dst[dst_idx + 1U] = plane_g[src];
             dst[dst_idx + 2U] = plane_b[src];
@@ -93,16 +113,22 @@ static int capture_one(uint8_t *dst, size_t bytes_per_frame)
         xprintf("wait new camera frame timeout\n");
         return -1;
     }
-    return planar320x240_to_rgb240x180(dst, bytes_per_frame);
+    return planar_to_rgb_model_input(dst, bytes_per_frame);
 }
 
 }  // namespace
 
-int cam_input_init(void)
+int cam_input_init(uint32_t model_w, uint32_t model_h)
 {
     if (g_inited) {
         return 0;
     }
+    if (model_w == 0U || model_h == 0U) {
+        xprintf("cam input model size invalid: w=%u h=%u\n", model_w, model_h);
+        return -1;
+    }
+    g_model_in_w = model_w;
+    g_model_in_h = model_h;
 
     if (cisdp_sensor_init() < 0) {
         xprintf("CIS Init fail\n");
@@ -120,31 +146,17 @@ int cam_input_init(void)
     cisdp_sensor_start();
 
     g_first_frame_ready = false;
-    g_pair_ready = false;
     g_inited = true;
     xprintf("camera input init done\n");
     return 0;
 }
 
-int cam_input_get_frame_pair(uint8_t *frame_t, uint8_t *frame_t1, size_t bytes_per_frame)
+int cam_input_get_frame(uint8_t *frame, size_t bytes_per_frame)
 {
-    if (!g_inited || frame_t == nullptr || frame_t1 == nullptr) {
+    if (!g_inited || frame == nullptr) {
         return -1;
     }
-
-    if (!g_pair_ready) {
-        if (capture_one(frame_t, bytes_per_frame) != 0) {
-            return -1;
-        }
-        if (capture_one(frame_t1, bytes_per_frame) != 0) {
-            return -1;
-        }
-        g_pair_ready = true;
-        return 0;
-    }
-
-    memcpy(frame_t, frame_t1, bytes_per_frame);
-    return capture_one(frame_t1, bytes_per_frame);
+    return capture_one(frame, bytes_per_frame);
 }
 
 void cam_input_deinit(void)
@@ -155,5 +167,6 @@ void cam_input_deinit(void)
     cisdp_sensor_stop();
     g_inited = false;
     g_first_frame_ready = false;
-    g_pair_ready = false;
+    g_model_in_w = 0U;
+    g_model_in_h = 0U;
 }

@@ -1,0 +1,4 @@
+interface:
+  display_name: "WE2 Himax Iterative Debug"
+  short_description: "Repeatable WE2/Himax debug loops with compact evidence logs."
+  default_prompt: "Run one WE2/Himax debug iteration: apply one hypothesis, run pipeline, extract key logs, and append incremental notes to the right markdown files."

@@ -8,6 +8,7 @@ override SCENARIO_APP_SUPPORT_LIST += $(APP_TYPE)/debug
 override SCENARIO_APP_SUPPORT_LIST += $(APP_TYPE)/core
 override SCENARIO_APP_SUPPORT_LIST += $(APP_TYPE)/config
 override SCENARIO_APP_SUPPORT_LIST += $(APP_TYPE)/port
+override SCENARIO_APP_SUPPORT_LIST += $(APP_TYPE)/viz
 
 APPL_DEFINES += -DTFLM_YOLOV8_OD
 APPL_DEFINES += -Daudvidpre_ret_pll400_timer1 -DIP_xdma
@@ -15,7 +16,7 @@ APPL_DEFINES += -DEVT_DATAPATH
 
 # 保留串口日志输出。
 APPL_DEFINES += -DUART_SEND_ALOGO_RESEULT
-APPL_DEFINES += -DDBG_MORE
+APPL_DEFINES += -DVIZ_UART_MODE
 
 # 摄像头输入需要事件模块定义与数据路径配置。
 EVENTHANDLER_SUPPORT = event_handler
@@ -27,7 +28,7 @@ EVENTHANDLER_SUPPORT_LIST += evt_datapath
 # The source code should be loacted in ~\library\{lib_name}\
 ##
 # LIB_SEL = pwrmgmt sensordp tflmtag2209_u55tag2205 spi_ptl spi_eeprom hxevent img_proc
-LIB_SEL = pwrmgmt sensordp tflmtag2412_u55tag2411 spi_ptl spi_eeprom hxevent img_proc
+LIB_SEL = pwrmgmt sensordp tflmtag2412_u55tag2411 spi_ptl spi_eeprom hxevent img_proc JPEGENC
 
 ##
 # middleware support feature

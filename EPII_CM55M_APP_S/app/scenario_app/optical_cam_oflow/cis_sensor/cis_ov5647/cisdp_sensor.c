@@ -74,6 +74,16 @@ static HX_CIS_SensorSetting_t OV5647_stream_off[] = {
 	    {HX_CIS_I2C_Action_W, 0x4202, 0x0F},
 };
 
+// 阶段 A 亮度调优：提高 AE 目标窗口，保持 AEC/AGC 自动模式。
+static HX_CIS_SensorSetting_t OV5647_ae_boost_setting[] = {
+		{HX_CIS_I2C_Action_W, 0x3a0f, 0x70},
+		{HX_CIS_I2C_Action_W, 0x3a10, 0x68},
+		{HX_CIS_I2C_Action_W, 0x3a1b, 0x70},
+		{HX_CIS_I2C_Action_W, 0x3a1e, 0x68},
+		{HX_CIS_I2C_Action_W, 0x3a11, 0x78},
+		{HX_CIS_I2C_Action_W, 0x3a1f, 0x38},
+};
+
 
 static void cisdp_wdma_addr_init(APP_DP_INP_SUBSAMPLE_E subs)
 {
@@ -98,6 +108,16 @@ static void cisdp_wdma_addr_init(APP_DP_INP_SUBSAMPLE_E subs)
 
 		g_wdma3_baseaddr= mm_reserve(230400); //320*240*3
 	}
+	else if(subs == APP_DP_RES_RGB640x480_INP_SUBSAMPLE_4X) {
+		g_jpegautofill_addr = mm_reserve_align(100,0x20);
+		g_wdma1_baseaddr = mm_reserve(4800); //160*120/4
+		if(g_wdma1_baseaddr!=0)
+			g_wdma2_baseaddr = g_wdma1_baseaddr;
+		else
+			return ;
+
+		g_wdma3_baseaddr= mm_reserve(57600); //160*120*3
+	}
 	else if(subs == APP_DP_RES_YUV640x480_INP_SUBSAMPLE_1X) {
 		g_jpegautofill_addr = mm_reserve_align(100,0x20);
 		g_wdma1_baseaddr = mm_reserve(76800); //640*480/4
@@ -117,6 +137,22 @@ static void cisdp_wdma_addr_init(APP_DP_INP_SUBSAMPLE_E subs)
 			return ;
 
 		g_wdma3_baseaddr= mm_reserve(115200); //320*240*1.5
+	}
+	else if(subs == APP_DP_RES_YUV640x480_INP_SUBSAMPLE_4X) {
+		g_jpegautofill_addr = mm_reserve_align(100,0x20);
+		g_wdma1_baseaddr = mm_reserve(4800); //160*120/4
+		if(g_wdma1_baseaddr!=0)
+			g_wdma2_baseaddr = g_wdma1_baseaddr;
+		else
+			return ;
+
+		g_wdma3_baseaddr= mm_reserve(28800); //160*120*1.5
+	}
+
+	if(g_jpegautofill_addr == 0 || g_wdma1_baseaddr == 0 || g_wdma2_baseaddr == 0 || g_wdma3_baseaddr == 0) {
+		xprintf("wdma alloc fail: subs=%d wd1=0x%x wd2=0x%x wd3=0x%x auto=0x%x\n",
+			subs, g_wdma1_baseaddr, g_wdma2_baseaddr, g_wdma3_baseaddr, g_jpegautofill_addr);
+		return;
 	}
 #else
     g_wdma1_baseaddr = SENDPLIB_WDMA1_ADDR;
@@ -346,6 +382,16 @@ int cisdp_sensor_init()
 		dbg_printf(DBG_LESS_INFO, "OV5647 Init Stream by app \n");
 	}
 
+	if(hx_drv_cis_setRegTable(OV5647_ae_boost_setting, HX_CIS_SIZE_N(OV5647_ae_boost_setting, HX_CIS_SensorSetting_t))!= HX_CIS_NO_ERROR)
+	{
+		dbg_printf(DBG_LESS_INFO, "OV5647 AE boost setting fail\r\n");
+		return -1;
+	}
+	else
+	{
+		dbg_printf(DBG_LESS_INFO, "OV5647 AE boost setting applied\r\n");
+	}
+
 #if 0	//Set mirror setting here if needed
     HX_CIS_SensorSetting_t HM2170_mirror_setting[] = {
             {HX_CIS_I2C_Action_W, 0x0101, CIS_MIRROR_SETTING},
@@ -479,6 +525,9 @@ int cisdp_dp_init(bool inp_init, SENSORDPLIB_PATH_E dp_type, evthandlerdp_CBEven
 				if(subs == APP_DP_RES_RGB640x480_INP_SUBSAMPLE_2X||subs == APP_DP_RES_YUV640x480_INP_SUBSAMPLE_2X)
 				sensordplib_set_sensorctrl_inp_wi_crop_bin(SENCTRL_SENSOR_TYPE, SENCTRL_STREAM_TYPE, SENCTRL_SENSOR_WIDTH,
 							SENCTRL_SENSOR_HEIGHT, INP_SUBSAMPLE_DISABLE, crop ,INP_BINNING_4TO2_B);
+				else if(subs == APP_DP_RES_RGB640x480_INP_SUBSAMPLE_4X||subs == APP_DP_RES_YUV640x480_INP_SUBSAMPLE_4X)
+				sensordplib_set_sensorctrl_inp_wi_crop_bin(SENCTRL_SENSOR_TYPE, SENCTRL_STREAM_TYPE, SENCTRL_SENSOR_WIDTH,
+							SENCTRL_SENSOR_HEIGHT, INP_SUBSAMPLE_4TO2, crop ,INP_BINNING_4TO2_B);
 				else if(subs == APP_DP_RES_RGB640x480_INP_SUBSAMPLE_1X||subs == APP_DP_RES_YUV640x480_INP_SUBSAMPLE_1X)
 				sensordplib_set_sensorctrl_inp_wi_crop_bin(SENCTRL_SENSOR_TYPE, SENCTRL_STREAM_TYPE, SENCTRL_SENSOR_WIDTH,
 								SENCTRL_SENSOR_HEIGHT, INP_SUBSAMPLE_DISABLE, crop ,INP_BINNING_DISABLE);
@@ -487,6 +536,10 @@ int cisdp_dp_init(bool inp_init, SENSORDPLIB_PATH_E dp_type, evthandlerdp_CBEven
 				if(subs == APP_DP_RES_RGB640x480_INP_SUBSAMPLE_2X||subs == APP_DP_RES_YUV640x480_INP_SUBSAMPLE_2X)
 				sensordplib_set_sensorctrl_inp_wi_crop_bin(SENCTRL_SENSOR_TYPE, SENCTRL_STREAM_TYPE, SENCTRL_SENSOR_WIDTH,
 							SENCTRL_SENSOR_HEIGHT, INP_SUBSAMPLE_DISABLE, crop ,INP_BINNING_16TO2_B);
+				else if(subs == APP_DP_RES_RGB640x480_INP_SUBSAMPLE_4X||subs == APP_DP_RES_YUV640x480_INP_SUBSAMPLE_4X)
+				// 4X: 先 16TO2 bin 到 320，再做 4TO2 subsample 到 160，避免使用未初始化默认路径。
+				sensordplib_set_sensorctrl_inp_wi_crop_bin(SENCTRL_SENSOR_TYPE, SENCTRL_STREAM_TYPE, SENCTRL_SENSOR_WIDTH,
+							SENCTRL_SENSOR_HEIGHT, INP_SUBSAMPLE_4TO2, crop ,INP_BINNING_16TO2_B);
 				else if(subs == APP_DP_RES_RGB640x480_INP_SUBSAMPLE_1X||subs == APP_DP_RES_YUV640x480_INP_SUBSAMPLE_1X)
 				sensordplib_set_sensorctrl_inp_wi_crop_bin(SENCTRL_SENSOR_TYPE, SENCTRL_STREAM_TYPE, SENCTRL_SENSOR_WIDTH,
 								SENCTRL_SENSOR_HEIGHT, INP_SUBSAMPLE_DISABLE, crop ,INP_BINNING_8TO2_B);
@@ -648,34 +701,49 @@ void cisdp_sensor_stop()
 
 void cisdp_get_jpginfo(uint32_t *jpeg_enc_filesize, uint32_t *jpeg_enc_addr)
 {
+    static uint32_t s_jpginfo_dbg_cnt = 0;
+
+	if (jpeg_enc_filesize == NULL || jpeg_enc_addr == NULL) {
+		return;
+	}
+
     uint8_t frame_no;
     uint8_t buffer_no = 0;
-    uint32_t jpeg_enc_filesize_real;
+    uint32_t jpeg_enc_filesize_real = 0;
 
     hx_drv_xdma_get_WDMA2_bufferNo(&buffer_no);
     hx_drv_xdma_get_WDMA2NextFrameIdx(&frame_no);
-    if(frame_no == 0)
-    {
+    if (buffer_no == 0) {
+        // Guard underflow when frame index is not ready yet.
+        frame_no = 0;
+    } else if (frame_no == 0) {
         frame_no = buffer_no - 1;
-    }else{
+    } else {
         frame_no = frame_no - 1;
     }
     hx_drv_jpeg_get_EncOutRealMEMSize(&jpeg_enc_filesize_real);
 
-    //dbg_printf(DBG_LESS_INFO, "current jpeg_size=0x%x\n", jpeg_enc_filesize_real);
-
     hx_drv_jpeg_get_FillFileSizeToMem(frame_no, g_jpegautofill_addr, jpeg_enc_filesize);
     hx_drv_jpeg_get_MemAddrByFrameNo(frame_no, g_wdma2_baseaddr, jpeg_enc_addr);
 
-    if( jpeg_enc_filesize_real != *jpeg_enc_filesize)
-    {
-        dbg_printf(DBG_LESS_INFO, "*jpeg_enc_filesize_real(0x%08X) != *jpeg_enc_filesize(0x%08X)\n"
-        		, jpeg_enc_filesize_real, *jpeg_enc_filesize);
-
-        //change value
+    if (jpeg_enc_filesize_real != *jpeg_enc_filesize) {
+        dbg_printf(DBG_LESS_INFO, "*jpeg_enc_filesize_real(0x%08X) != *jpeg_enc_filesize(0x%08X)\n",
+                   jpeg_enc_filesize_real,
+                   *jpeg_enc_filesize);
         *jpeg_enc_filesize = jpeg_enc_filesize_real;
     }
 
+    if ((s_jpginfo_dbg_cnt % 30U) == 0U) {
+        dbg_printf(DBG_LESS_INFO,
+                   "jpginfo bn=%u fn=%u real=0x%08X fill=0x%08X addr=0x%08X\n",
+                   buffer_no,
+                   frame_no,
+                   jpeg_enc_filesize_real,
+                   *jpeg_enc_filesize,
+                   *jpeg_enc_addr);
+    }
+    s_jpginfo_dbg_cnt++;
+ 
     //dbg_printf(DBG_LESS_INFO, "g_jpegautofill_addr: 0x%08X\n" "g_wdma2_baseaddr: 0x%08X\n", g_jpegautofill_addr, g_wdma2_baseaddr);
     //dbg_printf(DBG_LESS_INFO, "current frame_no=%d, jpeg_size=0x%x,addr=0x%x\n",frame_no,*jpeg_enc_filesize,*jpeg_enc_addr);
 }

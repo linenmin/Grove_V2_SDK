@@ -31,6 +31,7 @@ void ob_compute_checksum(const uint8_t *buf, size_t len, ob_checksum_stats_t *st
 void ob_compute_flow_summary(const int8_t *out_data,
                              int out_w,
                              int out_h,
+                             int out_c,
                              int out_zp,
                              float out_scale,
                              ob_flow_summary_t *summary);
@@ -47,6 +48,15 @@ void ob_log_infer_line(int loop_cnt,
                        uint32_t preproc_us,
                        uint32_t infer_us,
                        uint32_t total_us);
+
+/** plan-007 H1: 输出 flow 列均值采样，验证条纹是否与数据周期对齐 */
+void ob_log_col_mean_mag_sample(const int8_t *out_data,
+                                int out_w,
+                                int out_h,
+                                int out_c,
+                                int out_zp,
+                                float out_scale,
+                                int sample_step);
 
 #ifdef __cplusplus
 }

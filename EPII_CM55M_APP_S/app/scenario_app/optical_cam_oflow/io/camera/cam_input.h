@@ -8,8 +8,8 @@
 extern "C" {
 #endif
 
-int cam_input_init(void);
-int cam_input_get_frame_pair(uint8_t *frame_t, uint8_t *frame_t1, size_t bytes_per_frame);
+int cam_input_init(uint32_t model_w, uint32_t model_h);
+int cam_input_get_frame(uint8_t *frame, size_t bytes_per_frame);
 void cam_input_deinit(void);
 
 #ifdef __cplusplus

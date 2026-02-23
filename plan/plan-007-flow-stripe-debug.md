@@ -153,8 +153,9 @@
 ## 8. 与 plan-006 的关系及下一步
 
 - 本 plan 已经完成历史使命，成功定位「垂直黑白条纹」的元凶。
-- **下一步行动点（交接回上游/模型端）**：
-  条纹源自于 `sram_test_modified_vela.tflite` 内部！请检查 TFLite 模型的 UpSampling (如 ResizeBilinear、ConvTranspose2d 或 DepthToSpace) 所带来的**典型的棋盘格效应（Checkerboard Artifacts）**，或者排查转 Vela 时的 8-byte/8-pixel 内存布局填充错位是否污染了 tensor 数据！
-  - 请与算法同学同步，将模型重新训练消除上采样伪影，或者在 Vela 转换时排查 NHWC 内存。
-  - 确认 Web 上位的 Test Pattern 显示正常后，即可在代码中重新关闭 `FLOW_VIZ_TEST_PATTERN`。
-- 将此关键结论回写至 `master plan 006`。
+- **下一步行动点（交接回上游/模型端）**：（此条已得到解决！）
+  - **根本原因排查与修复（2026-02-23 终章）**：经核实 `EdgeFlowNet` 的 TFLite INT8 导出脚本 `run_sram_test.py` 发生了一个致命失误，其用于量化校准（Calibration）的 `representative_dataset` 竟然是 `np.random.uniform(0.0, 1.0)` 的纯白噪声，而且范围还错写成了 `0~1.0`（C++ 端实传的是 `0~255`）。
+  - **连锁反应分析**：白噪声与极端缩小的比例尺导致了 `MultiScaleResNet` 内大量采用 `ConvTranspose(3,3)` 与 `stride(2,2)` 生成的高低分辨率特征残差图的值域剧烈偏移并全面爆掉，最终输出的只有被错误量化放大的 `1/4` 分支网络残留物。当底层分辨率带有典型的 2 像素棋盘格，且被上采样放大 4 倍时，便恰好在真实硬件中形成了“8 像素周期循环”的强垂直条纹。
+  - **修复证明**：采用真实的 `Sintel` 子集照片进行 `0~255` 量化推理之后，模型顺利地提取出了真实激活极值。棋盘格完全被正确的高精细节重塑磨平，边缘设备的流水线视觉质量现已与 PC 浮点一致完美！
+- 在 Web 上位的条纹彻底消除后，可以在代码中重新关闭 `FLOW_VIZ_TEST_PATTERN`。
+- 将此最终破案结论记录进 `master plan 006`，本分支完美收官。

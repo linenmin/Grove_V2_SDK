@@ -3,9 +3,10 @@
 #include <math.h>
 #include <stdlib.h>
 
-// 1=固定 scale（plan-007 H2），0=per-frame max 归一化
+// 1=固定 scale，0=per-frame max 归一化
+// plan-007 9.7: 单尺度模型纯白→改用固定 scale 恢复对比度（小 mag 暗、大 mag 亮）
 #ifndef FLOW_VIZ_FIXED_SCALE
-#define FLOW_VIZ_FIXED_SCALE 0
+#define FLOW_VIZ_FIXED_SCALE 1
 #endif
 
 // 1=生成渐变测试图以检查后续 JPEG/Web 链路线条，0=正常渲染
@@ -38,7 +39,8 @@ void flow_render_to_gray(uint8_t *out_gray,
 #endif
 
 #if FLOW_VIZ_FIXED_SCALE
-    const float kFixedScale = 80.0f;
+    /* 40: 仅 mag>6.4 达白，小 mag 保持暗色，恢复运动区域可见性 */
+    const float kFixedScale = 40.0f;
     for (int i = 0; i < pixels; ++i) {
         const float dx = ((float)flow_data[i * out_stride + 0] - (float)out_zp) * out_scale;
         const float dy = ((float)flow_data[i * out_stride + 1] - (float)out_zp) * out_scale;

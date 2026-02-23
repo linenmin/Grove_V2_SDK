@@ -220,3 +220,20 @@
 - **改动**：cam_input 输出改为 BGR，FLOW_VIZ_FIXED_SCALE 改回 0
 - **现象**：显示从**灰白条纹**变成了**黑白条纹**，依旧没有光流输出
 - **结论**：BGR 修改改变了条纹的对比度/色调，但**垂直条纹模式仍存在**，说明问题可能仍在模型输出本身（8 像素周期伪影）或需尝试单尺度输出（绕过 AccumPreds）验证
+
+### 9.6 单尺度模型排查（2026-02-23）
+
+- **假设**：AccumPreds（resize_bilinear + add）在 INT8/Vela 下可能引入 8 像素周期伪影
+- **动作**：新增 `run_sram_test_singlescale.py`，导出单尺度（network_outputs[-1]）模型并烧录验证
+
+### 9.7 单尺度模型用户反馈：条纹消失，纯白画面（2026-02-23）
+
+- **现象**：条纹消失，但 Preview 为**纯白**，能看到一点点动态
+- **结论**：单尺度模型消除了 8 像素条纹，说明 AccumPreds 确为条纹元凶；纯白说明 flow magnitude 分布极均匀或 per-frame max 归一化将多数像素映射到高亮
+- **下一步**：改用固定 scale 并降低倍数，使小 mag 保持暗色、仅大 mag 亮，恢复可见对比度
+
+### 9.8 kFixedScale=40 后用户反馈：仍全白（2026-02-23）
+
+- **改动**：FLOW_VIZ_FIXED_SCALE=1，kFixedScale=40
+- **现象**：仍为**全白画面**
+- **结论**：flow magnitude 可能整体偏大，或 out_scale 导致 mag 数值范围与预期不符；需从 pipeline 日志中提取 flow 帧供 agent 分析，建立「agent 可见」的调试闭环

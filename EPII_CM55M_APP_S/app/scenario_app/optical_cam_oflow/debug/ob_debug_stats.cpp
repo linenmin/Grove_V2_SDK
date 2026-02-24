@@ -3,6 +3,14 @@
 #include "xprintf.h"
 #include <math.h>
 
+static int to_tenth_percent(int count, int total)
+{
+    if (total <= 0) {
+        return 0;
+    }
+    return (count * 1000) / total;
+}
+
 void ob_compute_checksum(const uint8_t *buf, size_t len, ob_checksum_stats_t *stats)
 {
     if (buf == nullptr || stats == nullptr || len == 0U) {
@@ -188,4 +196,178 @@ void ob_log_col_mean_mag_sample(const int8_t *out_data,
     }
 
     xprintf("\r\n");
+}
+
+void ob_log_mag_stats_grid_sample(const int8_t *out_data,
+                                  int out_w,
+                                  int out_h,
+                                  int out_c,
+                                  int out_zp,
+                                  float out_scale)
+{
+    if (out_data == nullptr || out_w <= 0 || out_h <= 0 || out_c < 2) {
+        return;
+    }
+
+    const int pixels = out_w * out_h;
+    const int stride = out_c;
+
+    float min_mag = 1e30f;
+    float max_mag = 0.0f;
+    double sum_mag = 0.0;
+    double sum_mag2 = 0.0;
+
+    for (int i = 0; i < pixels; ++i) {
+        const float dx = ((float)out_data[i * stride + 0] - (float)out_zp) * out_scale;
+        const float dy = ((float)out_data[i * stride + 1] - (float)out_zp) * out_scale;
+        const float mag = sqrtf(dx * dx + dy * dy);
+        if (mag < min_mag) {
+            min_mag = mag;
+        }
+        if (mag > max_mag) {
+            max_mag = mag;
+        }
+        sum_mag += (double)mag;
+        sum_mag2 += (double)mag * (double)mag;
+    }
+
+    const float mean_mag = (float)(sum_mag / (double)pixels);
+    float var_mag = (float)(sum_mag2 / (double)pixels) - (mean_mag * mean_mag);
+    if (var_mag < 0.0f) {
+        var_mag = 0.0f;
+    }
+    const float std_mag = sqrtf(var_mag);
+
+    const int x_list[3] = {0, out_w / 2, out_w - 1};
+    const int y_list[3] = {0, out_h / 2, out_h - 1};
+
+    xprintf("[mag_stats] min=%d.%03d max=%d.%03d mean=%d.%03d std=%d.%03d | grid",
+            (int)min_mag,
+            (int)fabsf(min_mag * 1000.0f) % 1000,
+            (int)max_mag,
+            (int)fabsf(max_mag * 1000.0f) % 1000,
+            (int)mean_mag,
+            (int)fabsf(mean_mag * 1000.0f) % 1000,
+            (int)std_mag,
+            (int)fabsf(std_mag * 1000.0f) % 1000);
+
+    for (int yi = 0; yi < 3; ++yi) {
+        for (int xi = 0; xi < 3; ++xi) {
+            const int x = x_list[xi];
+            const int y = y_list[yi];
+            const int idx = (y * out_w + x) * stride;
+            const float dx = ((float)out_data[idx + 0] - (float)out_zp) * out_scale;
+            const float dy = ((float)out_data[idx + 1] - (float)out_zp) * out_scale;
+            xprintf(" (%d,%d):dx=%d.%03d,dy=%d.%03d",
+                    x,
+                    y,
+                    (int)dx,
+                    (int)fabsf(dx * 1000.0f) % 1000,
+                    (int)dy,
+                    (int)fabsf(dy * 1000.0f) % 1000);
+        }
+    }
+
+    xprintf("\r\n");
+}
+
+void ob_log_out_q_histogram(const int8_t *out_data,
+                            int out_w,
+                            int out_h,
+                            int out_c)
+{
+    if (out_data == nullptr || out_w <= 0 || out_h <= 0 || out_c < 2) {
+        return;
+    }
+
+    const int pixels = out_w * out_h;
+    const int stride = out_c;
+    int hist0[256] = {0};
+    int hist1[256] = {0};
+
+    for (int i = 0; i < pixels; ++i) {
+        const int idx = i * stride;
+        const int q0 = (int)out_data[idx + 0];
+        const int q1 = (int)out_data[idx + 1];
+        hist0[q0 + 128]++;
+        hist1[q1 + 128]++;
+    }
+
+    int top0_q = -128, top0_cnt = -1;
+    int top1_q = -128, top1_cnt = -1;
+    int second0_q = -128, second0_cnt = -1;
+    int second1_q = -128, second1_cnt = -1;
+    for (int b = 0; b < 256; ++b) {
+        const int q = b - 128;
+        const int c0 = hist0[b];
+        const int c1 = hist1[b];
+
+        if (c0 > top0_cnt) {
+            second0_cnt = top0_cnt;
+            second0_q = top0_q;
+            top0_cnt = c0;
+            top0_q = q;
+        } else if (c0 > second0_cnt) {
+            second0_cnt = c0;
+            second0_q = q;
+        }
+
+        if (c1 > top1_cnt) {
+            second1_cnt = top1_cnt;
+            second1_q = top1_q;
+            top1_cnt = c1;
+            top1_q = q;
+        } else if (c1 > second1_cnt) {
+            second1_cnt = c1;
+            second1_q = q;
+        }
+    }
+
+    int near_min0 = 0;
+    int near_max0 = 0;
+    int near_min1 = 0;
+    int near_max1 = 0;
+    for (int q = -128; q <= -124; ++q) {
+        near_min0 += hist0[q + 128];
+        near_min1 += hist1[q + 128];
+    }
+    for (int q = 124; q <= 127; ++q) {
+        near_max0 += hist0[q + 128];
+        near_max1 += hist1[q + 128];
+    }
+
+    const int top0_pct10 = to_tenth_percent(top0_cnt, pixels);
+    const int top1_pct10 = to_tenth_percent(top1_cnt, pixels);
+    const int sec0_pct10 = to_tenth_percent(second0_cnt, pixels);
+    const int sec1_pct10 = to_tenth_percent(second1_cnt, pixels);
+    const int nmin0_pct10 = to_tenth_percent(near_min0, pixels);
+    const int nmin1_pct10 = to_tenth_percent(near_min1, pixels);
+    const int nmax0_pct10 = to_tenth_percent(near_max0, pixels);
+    const int nmax1_pct10 = to_tenth_percent(near_max1, pixels);
+
+    xprintf("[out_hist] ch0 top=%d(%d.%01d%%) second=%d(%d.%01d%%) near_min=%d(%d.%01d%%) near_max=%d(%d.%01d%%) | ch1 top=%d(%d.%01d%%) second=%d(%d.%01d%%) near_min=%d(%d.%01d%%) near_max=%d(%d.%01d%%)\r\n",
+            top0_q,
+            top0_pct10 / 10,
+            top0_pct10 % 10,
+            second0_q,
+            sec0_pct10 / 10,
+            sec0_pct10 % 10,
+            near_min0,
+            nmin0_pct10 / 10,
+            nmin0_pct10 % 10,
+            near_max0,
+            nmax0_pct10 / 10,
+            nmax0_pct10 % 10,
+            top1_q,
+            top1_pct10 / 10,
+            top1_pct10 % 10,
+            second1_q,
+            sec1_pct10 / 10,
+            sec1_pct10 % 10,
+            near_min1,
+            nmin1_pct10 / 10,
+            nmin1_pct10 % 10,
+            near_max1,
+            nmax1_pct10 / 10,
+            nmax1_pct10 % 10);
 }

@@ -14,16 +14,37 @@ Run reproducible WE2 debug cycles with small context cost:
 3. One compact evidence artifact per run
 4. One incremental markdown update before the next run
 
+## Context Bootstrap (Mandatory)
+
+Before any new debug turn, load context in this fixed order:
+
+1. `plan/plan-000-context-index.md`
+2. `logs/context/context_snapshot_latest.md`
+3. The latest debug plan markdown (usually `plan/plan-009-*.md`)
+
+If `context_snapshot_latest.md` is missing or stale, run:
+
+```bash
+bash scripts/build_context_snapshot.sh
+```
+
+Context guardrails:
+
+- Do not bulk-read all `plan/plan-00*.md` by default.
+- Backtrack old plans only when current evidence conflicts with prior conclusions.
+- Keep new run details incremental; avoid rewriting full history every turn.
+
 ## Mandatory Loop
 
-Follow this loop in order. Do not skip step 5.
+Follow this loop in order. Do not skip step 5 or step 6.
 
 1. Define one hypothesis and exact expected signals.
 2. Apply the smallest possible code/config change.
 3. Run build/flash/capture pipeline once.
 4. Extract compact evidence from the pipeline log.
-5. Append incremental markdown history for this run.
-6. Start the next attempt.
+5. Refresh context snapshot: `bash scripts/build_context_snapshot.sh`.
+6. Append incremental markdown history for this run.
+7. Start the next attempt.
 
 ## Plan And History Routing
 
@@ -43,8 +64,10 @@ Use scripts:
 - `scripts/get_model_slot.sh`
 - `scripts/normalize_model_path.sh`
 - `scripts/inspect_tflite_model.sh`
+- `scripts/build_context_snapshot.sh`
 
-Detailed routing guidance: `references/plan-routing.md`.
+- Routing (where to write): `references/plan-routing.md`.
+- Writing (how to keep plans compact): `references/plan-writing.md`.
 
 ## Compact Logging
 
@@ -63,6 +86,12 @@ Find latest plan:
 
 ```bash
 ./.cursor/skills/we2-himax-iterative-debug/scripts/find_latest_plan.sh
+```
+
+Refresh context snapshot:
+
+```bash
+bash scripts/build_context_snapshot.sh
 ```
 
 Create dedicated history page:

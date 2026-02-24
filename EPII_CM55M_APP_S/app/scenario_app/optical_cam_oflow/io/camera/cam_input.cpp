@@ -1,6 +1,7 @@
 #include "cam_input.h"
 
 #include <string.h>
+#include "img_proc_helium.h"
 
 extern "C" {
 #include "cisdp_sensor.h"
@@ -16,6 +17,15 @@ namespace {
 constexpr uint32_t kFrameWaitRetry = 1000;
 constexpr uint32_t kFrameWaitDelayMs = 2;
 constexpr uint32_t kInterFrameDelayMs = 33;
+
+// R10 result: keep BGR as default; RGB A/B did not improve flow readability.
+#ifndef CAM_INPUT_USE_BGR
+#define CAM_INPUT_USE_BGR 1
+#endif
+
+#ifndef CAM_INPUT_USE_HELIUM_RESIZE
+#define CAM_INPUT_USE_HELIUM_RESIZE 1
+#endif
 
 static bool g_inited = false;
 static bool g_first_frame_ready = false;
@@ -82,6 +92,35 @@ static int planar_to_rgb_model_input(uint8_t *dst, size_t dst_bytes)
         return -1;
     }
 
+#if CAM_INPUT_USE_HELIUM_RESIZE
+    // Keep preprocessing aligned with official apps: planar BGR8U3C -> packed RGB24.
+    float w_scale = 0.0f;
+    float h_scale = 0.0f;
+    if (g_model_in_w > 1U && g_model_in_h > 1U) {
+        w_scale = (float)(raw_w - 1U) / (float)(g_model_in_w - 1U);
+        h_scale = (float)(raw_h - 1U) / (float)(g_model_in_h - 1U);
+    }
+    hx_lib_image_resize_BGR8U3C_to_RGB24_helium((uint8_t *)raw,
+                                                 dst,
+                                                 (int)raw_w,
+                                                 (int)raw_h,
+                                                 (int)raw_c,
+                                                 (int)g_model_in_w,
+                                                 (int)g_model_in_h,
+                                                 w_scale,
+                                                 h_scale);
+#if CAM_INPUT_USE_BGR
+    // Export scripts use cv2.imread() (BGR), keep board input channel order consistent.
+    const size_t pix_cnt = (size_t)g_model_in_w * (size_t)g_model_in_h;
+    for (size_t i = 0; i < pix_cnt; ++i) {
+        const size_t p = i * 3U;
+        const uint8_t r = dst[p + 0U];
+        dst[p + 0U] = dst[p + 2U];
+        dst[p + 2U] = r;
+    }
+#endif
+    return 0;
+#else
     const uint8_t *plane_b = raw;
     const uint8_t *plane_g = raw + plane_sz;
     const uint8_t *plane_r = raw + plane_sz * 2U;
@@ -99,13 +138,20 @@ static int planar_to_rgb_model_input(uint8_t *dst, size_t dst_bytes)
             }
             const uint32_t src = src_y * raw_w + src_x;
             const uint32_t dst_idx = (y * g_model_in_w + x) * 3U;
-            /* plan-007: BGR 输出以匹配 run_sram_test.py 校准（cv2.imread 默认 BGR） */
+            // Keep channel order configurable for quick A/B validation.
+#if CAM_INPUT_USE_BGR
             dst[dst_idx + 0U] = plane_b[src];
             dst[dst_idx + 1U] = plane_g[src];
             dst[dst_idx + 2U] = plane_r[src];
+#else
+            dst[dst_idx + 0U] = plane_r[src];
+            dst[dst_idx + 1U] = plane_g[src];
+            dst[dst_idx + 2U] = plane_b[src];
+#endif
         }
     }
     return 0;
+#endif
 }
 
 static int capture_one(uint8_t *dst, size_t bytes_per_frame)

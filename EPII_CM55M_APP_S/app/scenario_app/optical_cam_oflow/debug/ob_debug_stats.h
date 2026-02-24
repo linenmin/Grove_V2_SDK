@@ -58,6 +58,20 @@ void ob_log_col_mean_mag_sample(const int8_t *out_data,
                                 float out_scale,
                                 int sample_step);
 
+/** plan-009 R7: 输出整帧 mag 统计与 3x3 网格点 dx/dy，区分常量场与渲染映射问题 */
+void ob_log_mag_stats_grid_sample(const int8_t *out_data,
+                                  int out_w,
+                                  int out_h,
+                                  int out_c,
+                                  int out_zp,
+                                  float out_scale);
+
+/** plan-009 R9: 输出 int8 通道分布（主峰值与边界饱和占比） */
+void ob_log_out_q_histogram(const int8_t *out_data,
+                            int out_w,
+                            int out_h,
+                            int out_c);
+
 #ifdef __cplusplus
 }
 #endif

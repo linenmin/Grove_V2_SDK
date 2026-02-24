@@ -237,3 +237,46 @@ publish_viz_payload()
 2. 如果有余量，将 `kFlowVizGrayJpegBufSize` 改为 `kFlowVizRgbJpegBufSize`
 3. 重新烧录测试
 
+---
+
+## 14. R3 下一步方案评估
+
+**方案对比**:
+
+| 方案 | 修改 | 内存影响 | 优点 | 缺点 |
+|------|------|----------|------|------|
+| A: 增大 JPEG buffer | `g_flow_viz_jpeg[48KB]` | +24KB | 简单直接 | 需确认 SRAM 余量 |
+| B: RGB 失败回退灰度 | 编码失败时调用 `flow_render_gray_to_jpeg` | 0 | 无需额外内存 | 复杂场景显示灰度 |
+| C: 降低 JPEG 质量 | `JPEG_Q_BEST` → `JPEG_Q_HIGH` | 0 | 无需额外内存 | 图像质量下降 |
+
+**推荐方案 A**：
+- 当前 SRAM 使用约 1,762KB / 1,920KB = 余量 ~158KB
+- 增加 24KB 后余量 ~134KB，仍然安全
+
+**实施步骤**:
+```cpp
+// cvapp_yolov8n_ob.cpp L256
+// 改为:
+__attribute__((section(".bss.NoInit"))) static uint8_t g_flow_viz_jpeg[kFlowVizRgbJpegBufSize] __attribute__((aligned(32)));
+
+// cvapp_yolov8n_ob.cpp L858
+// 改为:
+g_flow_viz_jpeg, kFlowVizRgbJpegBufSize);  // 使用 48KB buffer
+```
+
+**验证命令**:
+```bash
+cd /home/enmin/Seeed_Grove_Vision_AI_Module_V2
+./.cursor/skills/we2-optical-sd-pipeline/scripts/run_optical_pipeline.sh \
+  --mode with-model \
+  --app-type optical_cam_oflow \
+  --port /dev/ttyACM0 \
+  --model-arg "/home/enmin/MCUFlowNet/EdgeFlowNet/sramTest/output/sram_test_modified_vela.tflite 0xB7B000 0x00000" \
+  --capture-seconds 30 \
+  --extract-frames --max-frames 8
+```
+
+**预期结果**:
+- 静止画面：蓝色带彩条（低运动）
+- 快速晃动：彩色光流（高运动）而非摄像头图像
+

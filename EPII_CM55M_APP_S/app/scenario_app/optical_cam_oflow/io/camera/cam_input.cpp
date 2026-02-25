@@ -24,7 +24,7 @@ constexpr uint32_t kInterFrameDelayMs = 33;
 #endif
 
 #ifndef CAM_INPUT_USE_HELIUM_RESIZE
-#define CAM_INPUT_USE_HELIUM_RESIZE 1
+#define CAM_INPUT_USE_HELIUM_RESIZE 0
 #endif
 
 static bool g_inited = false;
@@ -125,19 +125,35 @@ static int planar_to_rgb_model_input(uint8_t *dst, size_t dst_bytes)
     const uint8_t *plane_g = raw + plane_sz;
     const uint8_t *plane_r = raw + plane_sz * 2U;
 
-    // 统一缩放到模型输入尺寸，兼容 320x240/160x120 等 raw 尺寸。
+    // 针对 Optical Flow，我们需要保持最真实的像素物理属性，禁止随意拉伸（这会导致异常的光流向量）。
+    // 最优法: 计算输入 (raw_w x raw_h) 在适应到输出 (g_model_in_w x g_model_in_h) 时，
+    // 以中心对齐的方式，进行最大可能的等比裁剪 (Center Crop)
+    
+    // 计算缩放比例 (以更小的那一边为基准，确保填满目标区域)
+    float scale = (float)raw_w / (float)g_model_in_w;
+    float scale_h = (float)raw_h / (float)g_model_in_h;
+    if (scale_h < scale) {
+        scale = scale_h; 
+    }
+
+    // 计算中心裁剪框在 raw 下的尺寸和起始位置
+    uint32_t crop_w = (uint32_t)(g_model_in_w * scale);
+    uint32_t crop_h = (uint32_t)(g_model_in_h * scale);
+    uint32_t start_x = (raw_w - crop_w) / 2U;
+    uint32_t start_y = (raw_h - crop_h) / 2U;
+
+    // Nearest Neighbor Resize with Center Crop
     for (uint32_t y = 0; y < g_model_in_h; ++y) {
-        uint32_t src_y = (y * raw_h) / g_model_in_h;
-        if (src_y >= raw_h) {
-            src_y = raw_h - 1U;
-        }
+        uint32_t src_y = start_y + (uint32_t)(y * scale);
+        if (src_y >= raw_h) src_y = raw_h - 1U;
+        
         for (uint32_t x = 0; x < g_model_in_w; ++x) {
-            uint32_t src_x = (x * raw_w) / g_model_in_w;
-            if (src_x >= raw_w) {
-                src_x = raw_w - 1U;
-            }
+            uint32_t src_x = start_x + (uint32_t)(x * scale);
+            if (src_x >= raw_w) src_x = raw_w - 1U;
+            
             const uint32_t src = src_y * raw_w + src_x;
             const uint32_t dst_idx = (y * g_model_in_w + x) * 3U;
+            
             // Keep channel order configurable for quick A/B validation.
 #if CAM_INPUT_USE_BGR
             dst[dst_idx + 0U] = plane_b[src];

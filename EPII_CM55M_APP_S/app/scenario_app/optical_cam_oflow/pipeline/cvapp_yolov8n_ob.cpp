@@ -206,27 +206,20 @@ static bool g_prev_frame_valid = false;
 // 设置为 0 时输出灰度光流（亮度=幅度）
 // 注意：RGB JPEG 可能超出 24KB buffer，如果失败会回退到灰度
 #ifndef FLOW_VIZ_RGB_OUTPUT
-#define FLOW_VIZ_RGB_OUTPUT 1  // D14: 开启彩色光流输出
+#define FLOW_VIZ_RGB_OUTPUT 1  // D14: 彩色光流输出
 #endif
 // 构造极端测试输入：prev=0, curr=127（量化域）
 #ifndef FLOW_DBG_VERIFY_EXTREME_INPUT
 #define FLOW_DBG_VERIFY_EXTREME_INPUT 0  // 关闭极端输入，使用真实数据
 #endif
-// D5: 修复 NHWC 布局（2026-02-24）
-// 将 Planar 布局 [prev_frame][curr_frame] 转换为 NHWC 交错布局 [px0_prev_rgb, px0_curr_rgb, px1_prev_rgb, px1_curr_rgb, ...]
-#ifndef FLOW_FIX_NHWC_LAYOUT
-#define FLOW_FIX_NHWC_LAYOUT 1
-#endif
-#ifndef FLOW_DBG_NHWC_ADDR_CHECK
-#define FLOW_DBG_NHWC_ADDR_CHECK 1
-#endif
+
 // 0: 使用紧凑行步长（w*3）；>0: 强制指定输入行步长（用于 stride 诊断）
 #ifndef FLOW_DBG_INPUT_ROW_STRIDE_BYTES
 #define FLOW_DBG_INPUT_ROW_STRIDE_BYTES 0
 #endif
 // D6: 诊断开关。开启后，INVOKE.image 直接发布 NPU 输入 prev 帧（灰度），用于隔离预处理链路问题。
 #ifndef FLOW_DBG_VIZ_INPUT_PREV
-#define FLOW_DBG_VIZ_INPUT_PREV 0
+#define FLOW_DBG_VIZ_INPUT_PREV 0  // D6: 开启为 1 可视化 NPU 输入 prev 帧
 #endif
 static int8_t *g_freeze_prev_q = nullptr;
 static bool g_freeze_pair_ready = false;
@@ -418,74 +411,6 @@ static void perturb_half_inplace(int8_t *buf_q, size_t len, int loop_cnt, const 
 }
 #endif
 
-#if FLOW_FIX_NHWC_LAYOUT
-static bool ranges_overlap(const void *a, size_t a_len, const void *b, size_t b_len)
-{
-    if (a == nullptr || b == nullptr || a_len == 0U || b_len == 0U) {
-        return false;
-    }
-    const uintptr_t a0 = (uintptr_t)a;
-    const uintptr_t a1 = a0 + a_len;
-    const uintptr_t b0 = (uintptr_t)b;
-    const uintptr_t b1 = b0 + b_len;
-    return (a0 < b1) && (b0 < a1);
-}
-
-// D5: 将 Planar 布局转换为 NHWC 交错布局
-// 输入：prev[frame_size] + curr[frame_size] (Planar)
-// 输出：nhwc[frame_size * 2] (NHWC 交错：每像素 prev_rgb + curr_rgb)
-// frame_size = w * h * 3
-static bool convert_planar_to_nhwc(const int8_t *prev_q,
-                                   const int8_t *curr_q,
-                                   int8_t *nhwc_out,
-                                   int in_w,
-                                   int in_h,
-                                   size_t src_row_stride_bytes)
-{
-    if (prev_q == nullptr || curr_q == nullptr || nhwc_out == nullptr ||
-        in_w <= 0 || in_h <= 0 ||
-        src_row_stride_bytes < (size_t)in_w * 3U) {
-        return false;
-    }
-
-    for (int y = 0; y < in_h; ++y) {
-        const size_t row_off = (size_t)y * src_row_stride_bytes;
-        for (int x = 0; x < in_w; ++x) {
-            const size_t src_off = row_off + (size_t)x * 3U;
-            const size_t pix = (size_t)y * (size_t)in_w + (size_t)x;
-            const size_t dst_off = pix * 6U;
-            // prev RGB
-            nhwc_out[dst_off + 0] = prev_q[src_off + 0];
-            nhwc_out[dst_off + 1] = prev_q[src_off + 1];
-            nhwc_out[dst_off + 2] = prev_q[src_off + 2];
-            // curr RGB
-            nhwc_out[dst_off + 3] = curr_q[src_off + 0];
-            nhwc_out[dst_off + 4] = curr_q[src_off + 1];
-            nhwc_out[dst_off + 5] = curr_q[src_off + 2];
-        }
-    }
-    return true;
-}
-
-static bool extract_prev_from_nhwc(const int8_t *nhwc_in,
-                                   int8_t *prev_out,
-                                   int in_w,
-                                   int in_h)
-{
-    if (nhwc_in == nullptr || prev_out == nullptr || in_w <= 0 || in_h <= 0) {
-        return false;
-    }
-    const size_t pix_cnt = (size_t)in_w * (size_t)in_h;
-    for (size_t i = 0; i < pix_cnt; ++i) {
-        const size_t src_off = i * 6U;
-        const size_t dst_off = i * 3U;
-        prev_out[dst_off + 0] = nhwc_in[src_off + 0];
-        prev_out[dst_off + 1] = nhwc_in[src_off + 1];
-        prev_out[dst_off + 2] = nhwc_in[src_off + 2];
-    }
-    return true;
-}
-#endif
 
 #if FLOW_DBG_SYNTH_INJECT
 static int clamp_int(int v, int lo, int hi)
@@ -1446,60 +1371,7 @@ int cv_yolov8n_ob_run(struct_yolov8_ob_algoResult *algoresult_yolov8n_ob)
     }
 #endif
 
-    // D5: 将 Planar 布局转换为 NHWC 交错布局
-    // 1. 保存 prev_q 到临时缓冲区
-    // 2. 将 prev_q 和 curr_q 交错写入 input_ptr
-    if (g_prev_q_buffer != nullptr) {
-        memcpy(g_prev_q_buffer, input_ptr, g_raw_frame_bytes);
-        const size_t src_row_stride_bytes =
-#if FLOW_DBG_INPUT_ROW_STRIDE_BYTES > 0
-            (size_t)FLOW_DBG_INPUT_ROW_STRIDE_BYTES;
-#else
-            (size_t)g_model_in_w * 3U;
-#endif
-#if FLOW_DBG_NHWC_ADDR_CHECK
-        if (g_ctx.loop_cnt == 0) {
-            const size_t dst_len = pix_cnt * 6U;
-            const bool ov_prev_dst = ranges_overlap(g_prev_q_buffer, g_raw_frame_bytes, input_ptr, dst_len);
-            const bool ov_curr_dst = ranges_overlap(curr_q, g_raw_frame_bytes, input_ptr, dst_len);
-            xprintf("[NHWC_ADDR] prev=0x%x curr=0x%x dst=0x%x prev_ov=%d curr_ov=%d stride=%u\n",
-                    (unsigned int)(uintptr_t)g_prev_q_buffer,
-                    (unsigned int)(uintptr_t)curr_q,
-                    (unsigned int)(uintptr_t)input_ptr,
-                    ov_prev_dst ? 1 : 0,
-                    ov_curr_dst ? 1 : 0,
-                    (unsigned int)src_row_stride_bytes);
-        }
-#endif
-        if (!convert_planar_to_nhwc(g_prev_q_buffer,
-                                    curr_q,
-                                    input_ptr,
-                                    g_model_in_w,
-                                    g_model_in_h,
-                                    src_row_stride_bytes)) {
-            xprintf("[NHWC_FIX] convert fail (w=%d h=%d stride=%u)\n",
-                    g_model_in_w,
-                    g_model_in_h,
-                    (unsigned int)src_row_stride_bytes);
-            return -1;
-        }
-        
-        if (g_ctx.loop_cnt == 0) {
-            xprintf("[NHWC_FIX] Converted to NHWC layout. First 24 bytes:\n  ");
-            for (int i = 0; i < 24; ++i) {
-                xprintf("%02X ", (uint8_t)input_ptr[i]);
-            }
-            xprintf("\n[NHWC_FIX] Expected: 80 80 80 00 00 00 80 80 80 00 00 00 ...\n");
-        }
 
-#if FLOW_DBG_VIZ_INPUT_PREV
-        // D6 精确验证：从 NHWC 输入张量回抽 prev 三通道，确保可视化的是“真实喂给 NPU 的数据”。
-        if (!extract_prev_from_nhwc(input_ptr, g_prev_q_buffer, g_model_in_w, g_model_in_h)) {
-            xprintf("[NHWC_FIX] extract prev from nhwc fail\n");
-            return -1;
-        }
-#endif
-    }
 
     ob_perf_mark(&t_preproc_end);
     ob_perf_mark(&t_infer_start);

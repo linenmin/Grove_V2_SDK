@@ -29,23 +29,20 @@
 
 // 轻量空间平滑，减轻零散亮点和锯齿纹理。
 #ifndef FLOW_VIZ_LIGHT_SMOOTH
-#define FLOW_VIZ_LIGHT_SMOOTH 1
+#define FLOW_VIZ_LIGHT_SMOOTH 0
 #endif
 
 // 1=按行去除幅值基线（抑制整行条带），0=不做行偏置抑制
 #ifndef FLOW_VIZ_REMOVE_ROW_BIAS
-#define FLOW_VIZ_REMOVE_ROW_BIAS 1
+#define FLOW_VIZ_REMOVE_ROW_BIAS 0
 #endif
 
-// D7-2: 输出布局排查开关。
-// 0: 按 NHWC interleaved 读取 (dx,dy,dx,dy...)
-// 1: 按 planar 读取 (all dx first, then all dy)
+// 绝对真实内存布局：纯 Planar 排布 (NCHW)
 #ifndef FLOW_VIZ_OUT_PLANAR
-#define FLOW_VIZ_OUT_PLANAR 0
+#define FLOW_VIZ_OUT_PLANAR 1
 #endif
 
-// D7-3: 灰度渲染分量模式。
-// 0: |flow| 幅值；1: dx 有符号；2: dy 有符号
+// 灰度渲染分量模式。0: |flow| 幅值；1: dx 有符号；2: dy 有符号
 #ifndef FLOW_VIZ_GRAY_COMPONENT
 #define FLOW_VIZ_GRAY_COMPONENT 0
 #endif

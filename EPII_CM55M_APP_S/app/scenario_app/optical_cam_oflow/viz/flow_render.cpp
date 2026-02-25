@@ -10,7 +10,7 @@
 
 // 1=先减去整帧平均 flow（全局平移）再做可视化，突出局部差异
 #ifndef FLOW_VIZ_REMOVE_GLOBAL_MOTION
-#define FLOW_VIZ_REMOVE_GLOBAL_MOTION 1
+#define FLOW_VIZ_REMOVE_GLOBAL_MOTION 0
 #endif
 
 // 1=生成渐变测试图以检查后续 JPEG/Web 链路线条，0=正常渲染
@@ -39,7 +39,7 @@
 
 // 绝对真实内存布局：纯 Planar 排布 (NCHW)
 #ifndef FLOW_VIZ_OUT_PLANAR
-#define FLOW_VIZ_OUT_PLANAR 1
+#define FLOW_VIZ_OUT_PLANAR 0
 #endif
 
 // 灰度渲染分量模式。0: |flow| 幅值；1: dx 有符号；2: dy 有符号
@@ -359,28 +359,16 @@ void flow_render_to_gray(uint8_t *out_gray,
             dy -= mean_dy;
 #endif
             float mag = sqrtf(dx * dx + dy * dy);
-#if FLOW_VIZ_REMOVE_ROW_BIAS
-            if (use_row_bias) {
-                mag = fabsf(mag - row_base_mag);
-            }
-#endif
-            float n = (max_mag > 1e-6f) ? (mag / max_mag) : 0.0f;
-            if (n < 0.0f) {
-                n = 0.0f;
-            } else if (n > 1.0f) {
-                n = 1.0f;
-            }
-            float s = (n - low_n) * inv_span;
-            if (s < 0.0f) {
-                s = 0.0f;
-            } else if (s > 1.0f) {
-                s = 1.0f;
-            }
-            out_gray[i] = (uint8_t)(s * 255.0f + 0.5f);
+
+            // D15: 使用固定增益 0.05 (mag=20px 时饱和)
+            float mag_norm = mag * 0.05f;
+            if (mag_norm > 1.0f) mag_norm = 1.0f;
+            
+            out_gray[i] = (uint8_t)(mag_norm * 255.0f + 0.5f);
         }
     }
-#endif
-#endif
+#endif  // FLOW_VIZ_LIGHT_SMOOTH
+#endif  // FLOW_VIZ_FIXED_SCALE
 }
 
 size_t flow_render_gray_to_jpeg(const uint8_t *gray,
@@ -464,7 +452,7 @@ void flow_render_to_rgb(uint8_t *out_rgb,
         const float hue = angle / (2.0f * 3.14159265f);
 
         float sat = 1.0f;
-        float val = mag * 2.0f;
+        float val = mag * 0.05f;  // D15: 降低增益，mag=20px 时饱和
         if (val > 1.0f) val = 1.0f;
 
         float r, g, b;
@@ -538,7 +526,7 @@ size_t flow_render_rgb_to_jpeg_block(const int8_t *flow_data,
                 const float hue = angle / (2.0f * 3.14159265f);
 
                 float sat = 1.0f;
-                float val = mag * 2.0f;
+                float val = mag * 0.05f;  // D15: 降低增益
                 if (val > 1.0f) val = 1.0f;
 
                 float r, g, b;

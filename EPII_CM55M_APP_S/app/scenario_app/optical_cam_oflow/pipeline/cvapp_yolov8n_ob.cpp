@@ -110,7 +110,7 @@ static int g_model_out_h = 0;
 static int g_model_out_c = 0;
 static size_t g_raw_frame_bytes = 0U;
 static int8_t *g_curr_q_shadow = nullptr;
-// D5: NHWC 转换临时缓冲区（存储 prev_q 用于交错转换）
+// prev_q 缓冲区：存储上一帧量化数据，用于 NHWC 6 通道交错拼装
 static int8_t *g_prev_q_buffer = nullptr;
 static uint32_t g_viz_fail_cnt = 0;
 static uint32_t g_viz_skip_cnt = 0;
@@ -188,13 +188,6 @@ static bool g_prev_frame_valid = false;
 #ifndef FLOW_DBG_PATCH_H
 #define FLOW_DBG_PATCH_H 16
 #endif
-// D4: NHWC vs Planar 内存布局验证（2026-02-24）
-// 构造极端输入：prev=0, curr=127，打印 input buffer 前 24 字节
-// 正确的 NHWC：0 0 0 127 127 127 0 0 0 127 127 127 ...
-// 错误的 Planar：0 0 0 0 0 0 ... (90000个0) 127 127 127 ...
-#ifndef FLOW_DBG_VERIFY_NHWC_LAYOUT
-#define FLOW_DBG_VERIFY_NHWC_LAYOUT 0  // 验证完成，关闭
-#endif
 // D10: CPU 模式开关（2026-02-24）
 // 设置为 1 时使用纯 CPU 推理（需要 non-vela 模型）
 // 设置为 0 时使用 NPU 推理（需要 vela 编译后的模型）
@@ -205,18 +198,7 @@ static bool g_prev_frame_valid = false;
 // 设置为 1 时输出彩色光流（颜色=方向，亮度=幅度）
 // 设置为 0 时输出灰度光流（亮度=幅度）
 // 注意：RGB JPEG 可能超出 24KB buffer，如果失败会回退到灰度
-#ifndef FLOW_VIZ_RGB_OUTPUT
-#define FLOW_VIZ_RGB_OUTPUT 1  // D14: 彩色光流输出
-#endif
-// 构造极端测试输入：prev=0, curr=127（量化域）
-#ifndef FLOW_DBG_VERIFY_EXTREME_INPUT
-#define FLOW_DBG_VERIFY_EXTREME_INPUT 0  // 关闭极端输入，使用真实数据
-#endif
-
-// 0: 使用紧凑行步长（w*3）；>0: 强制指定输入行步长（用于 stride 诊断）
-#ifndef FLOW_DBG_INPUT_ROW_STRIDE_BYTES
-#define FLOW_DBG_INPUT_ROW_STRIDE_BYTES 0
-#endif
+#define FLOW_VIZ_RGB_OUTPUT 1  // R4: 恢复彩色光流输出
 // D6: 诊断开关。开启后，INVOKE.image 直接发布 NPU 输入 prev 帧（灰度），用于隔离预处理链路问题。
 #ifndef FLOW_DBG_VIZ_INPUT_PREV
 #define FLOW_DBG_VIZ_INPUT_PREV 0  // D6: 开启为 1 可视化 NPU 输入 prev 帧
@@ -351,6 +333,25 @@ static void compute_checksum_from_q(const int8_t *buf_q, size_t len, ob_checksum
     stats->sum = sum;
     stats->min = min_v;
     stats->max = max_v;
+}
+
+// 将 prev_q (H*W*3) 和 curr_q (H*W*3) 交错写入 dst_6ch (H*W*6)
+// NHWC 布局：每像素 [prev_R, prev_G, prev_B, curr_R, curr_G, curr_B]
+static void interleave_prev_curr_nhwc(int8_t *dst_6ch,
+                                       const int8_t *prev_q,
+                                       const int8_t *curr_q,
+                                       size_t pix_cnt)
+{
+    for (size_t i = 0; i < pix_cnt; ++i) {
+        const size_t s3 = i * 3U;
+        const size_t d6 = i * 6U;
+        dst_6ch[d6 + 0] = prev_q[s3 + 0];
+        dst_6ch[d6 + 1] = prev_q[s3 + 1];
+        dst_6ch[d6 + 2] = prev_q[s3 + 2];
+        dst_6ch[d6 + 3] = curr_q[s3 + 0];
+        dst_6ch[d6 + 4] = curr_q[s3 + 1];
+        dst_6ch[d6 + 5] = curr_q[s3 + 2];
+    }
 }
 
 static void render_input_prev_q_to_gray(uint8_t *out_gray,
@@ -1147,14 +1148,14 @@ int cv_yolov8n_ob_init(bool security_enable, bool privilege_enable, uint32_t mod
     }
     g_curr_q_shadow = (int8_t *)curr_shadow_addr;
 
-    // D5: 分配 prev_q 缓冲区用于 NHWC 交错转换
+    // prev_q 缓冲区：存储上一帧，用于与当前帧交错拼装成 6 通道 NHWC 输入
     const uint32_t prev_buffer_addr = mm_reserve_align((uint32_t)g_raw_frame_bytes, 0x20);
     if (prev_buffer_addr == 0U) {
         xprintf("alloc prev buffer fail, size=%u\r\n", (unsigned int)g_raw_frame_bytes);
         return -1;
     }
     g_prev_q_buffer = (int8_t *)prev_buffer_addr;
-    xprintf("[NHWC_FIX] prev buffer allocated at 0x%x size=%u\n", prev_buffer_addr, (unsigned int)g_raw_frame_bytes);
+    xprintf("prev_q buffer allocated at 0x%x size=%u\n", prev_buffer_addr, (unsigned int)g_raw_frame_bytes);
 
 #if FLOW_DBG_FREEZE_PAIR
     const uint32_t freeze_prev_addr = mm_reserve_align((uint32_t)g_raw_frame_bytes, 0x20);
@@ -1269,109 +1270,39 @@ int cv_yolov8n_ob_run(struct_yolov8_ob_algoResult *algoresult_yolov8n_ob)
             xprintf("camera frame capture fail\n");
             return -1;
         }
-        uint8_t raw_probe[6] = {0};
-        if (g_ctx.loop_cnt < 3) {
-            memcpy(raw_probe, curr_raw, sizeof(raw_probe));
-        }
         ob_compute_checksum(curr_raw, g_raw_frame_bytes, &g_ctx.raw2_stats);
         quantize_rgb_frame_inplace(curr_raw, curr_q, g_raw_frame_bytes);
-        if (g_ctx.loop_cnt < 3) {
-            xprintf("[QCHK] raw=%u,%u,%u,%u,%u,%u q=%d,%d,%d,%d,%d,%d in_zp=%d\n",
-                    raw_probe[0], raw_probe[1], raw_probe[2],
-                    raw_probe[3], raw_probe[4], raw_probe[5],
-                    (int)curr_q[0], (int)curr_q[1], (int)curr_q[2],
-                    (int)curr_q[3], (int)curr_q[4], (int)curr_q[5],
-                    yolov8n_ob_input->params.zero_point);
-        }
 
         if (!g_prev_frame_valid) {
-            memcpy(input_ptr, curr_q, g_raw_frame_bytes);
+            // 首帧：存入 prev 缓冲区，等待下一帧配对
+            memcpy(g_prev_q_buffer, curr_q, g_raw_frame_bytes);
             g_prev_frame_valid = true;
+            if (g_ctx.loop_cnt < 3) {
+                xprintf("[NHWC] first frame stored to prev_q_buffer\n");
+            }
             return 0;
         }
-        compute_checksum_from_q(input_ptr, g_raw_frame_bytes, &g_ctx.raw1_stats);
+        compute_checksum_from_q(g_prev_q_buffer, g_raw_frame_bytes, &g_ctx.raw1_stats);
     }
     ob_perf_mark(&t_io_end);
     ob_perf_mark(&t_preproc_start);
 
-    bool freeze_active = false;
-#if FLOW_DBG_FREEZE_PAIR
-    if (g_freeze_pair_ready && g_freeze_prev_q != nullptr) {
-        freeze_active = true;
-    }
-#endif
-    if (!freeze_active && curr_q != g_curr_q_shadow) {
-        memcpy(g_curr_q_shadow, curr_q, g_raw_frame_bytes);
+    // 核心修复：将 prev (g_prev_q_buffer) 和 curr (curr_q) 交错拼装到 6 通道 NHWC 输入
+    interleave_prev_curr_nhwc(input_ptr, g_prev_q_buffer, curr_q, pix_cnt);
+    if (g_ctx.loop_cnt < 3) {
+        xprintf("[NHWC] interleaved prev+curr into input tensor (%u pixels)\n",
+                (unsigned int)pix_cnt);
+        // 打印前 12 字节验证交错正确性
+        xprintf("[NHWC] input[0..11]: %d %d %d %d %d %d | %d %d %d %d %d %d\n",
+                (int)input_ptr[0], (int)input_ptr[1], (int)input_ptr[2],
+                (int)input_ptr[3], (int)input_ptr[4], (int)input_ptr[5],
+                (int)input_ptr[6], (int)input_ptr[7], (int)input_ptr[8],
+                (int)input_ptr[9], (int)input_ptr[10], (int)input_ptr[11]);
     }
 
-#if FLOW_DBG_FREEZE_PAIR
-    if (g_freeze_prev_q != nullptr) {
-        if (!g_freeze_pair_ready) {
-            memcpy(g_freeze_prev_q, input_ptr, g_raw_frame_bytes);
-            if (curr_q != g_curr_q_shadow) {
-                memcpy(g_curr_q_shadow, curr_q, g_raw_frame_bytes);
-            }
-            g_freeze_pair_ready = true;
-            g_freeze_pair_loop = (uint32_t)g_ctx.loop_cnt;
-            xprintf("[freeze_pair] captured loop=%d\n", g_ctx.loop_cnt);
-        } else {
-            memcpy(input_ptr, g_freeze_prev_q, g_raw_frame_bytes);
-            if (curr_q != g_curr_q_shadow) {
-                memcpy(curr_q, g_curr_q_shadow, g_raw_frame_bytes);
-            }
-            compute_checksum_from_q(input_ptr, g_raw_frame_bytes, &g_ctx.raw1_stats);
-            compute_checksum_from_q(curr_q, g_raw_frame_bytes, &curr_q_before);
-            compute_checksum_from_q(curr_q, g_raw_frame_bytes, &g_ctx.raw2_stats);
-        }
-    }
-#endif
-
-#if FLOW_DBG_PERTURB_ENABLE
-    if (perturb_should_apply_loop(g_ctx.loop_cnt)) {
-#if FLOW_DBG_PERTURB_TARGET == 1
-        perturb_half_inplace(input_ptr, g_raw_frame_bytes, g_ctx.loop_cnt, "prev");
-#elif FLOW_DBG_PERTURB_TARGET == 2
-        perturb_half_inplace(curr_q, g_raw_frame_bytes, g_ctx.loop_cnt, "curr");
-#elif FLOW_DBG_PERTURB_TARGET == 3
-        perturb_half_inplace(input_ptr, g_raw_frame_bytes, g_ctx.loop_cnt, "prev");
-        perturb_half_inplace(curr_q, g_raw_frame_bytes, g_ctx.loop_cnt, "curr");
-#endif
-    }
-#endif
-    compute_checksum_from_q(input_ptr, g_raw_frame_bytes, &g_ctx.raw1_stats);
+    compute_checksum_from_q(g_prev_q_buffer, g_raw_frame_bytes, &g_ctx.raw1_stats);
     compute_checksum_from_q(curr_q, g_raw_frame_bytes, &curr_q_before);
     compute_checksum_from_q(curr_q, g_raw_frame_bytes, &g_ctx.raw2_stats);
-
-#if FLOW_DBG_VERIFY_NHWC_LAYOUT
-    // D4: 验证 NHWC vs Planar 内存布局
-    // 正确的 NHWC：每个像素的 prev/curr 通道交错
-    // 错误的 Planar：prev 全部在前，curr 全部在后
-    if (g_ctx.loop_cnt == 0) {
-#if FLOW_DBG_VERIFY_EXTREME_INPUT
-        // 构造极端输入：prev=0 (量化域 -128), curr=127 (量化域 -1)
-        // 注意：量化域中 0 表示 uint8 的 128
-        // prev = -128 (全黑), curr = 0 (中灰)
-        xprintf("[NHWC_VERIFY] Injecting extreme test input: prev=-128, curr=0\n");
-        memset(input_ptr, (int8_t)(-128), g_raw_frame_bytes);  // prev = -128
-        memset(curr_q, 0, g_raw_frame_bytes);                  // curr = 0
-#endif
-        xprintf("[NHWC_VERIFY] input buffer first 24 bytes (hex):\n  ");
-        for (int i = 0; i < 24; ++i) {
-            xprintf("%02X ", (uint8_t)input_ptr[i]);
-        }
-        xprintf("\n");
-        xprintf("[NHWC_VERIFY] Expected NHWC pattern: 80 80 80 00 00 00 80 80 80 00 00 00 ...\n");
-        xprintf("[NHWC_VERIFY] Planar pattern would be: 80 80 80 80 80 80 ... (90000 x 80) then 00 00 00 ...\n");
-        // 打印 prev/curr 分界点附近
-        xprintf("[NHWC_VERIFY] Bytes at offset 89994-90006 (prev/curr boundary):\n  ");
-        for (int i = 89994; i < 90006; ++i) {
-            xprintf("%02X ", (uint8_t)input_ptr[i]);
-        }
-        xprintf("\n");
-    }
-#endif
-
-
 
     ob_perf_mark(&t_preproc_end);
     ob_perf_mark(&t_infer_start);
@@ -1382,8 +1313,8 @@ int cv_yolov8n_ob_run(struct_yolov8_ob_algoResult *algoresult_yolov8n_ob)
         return -1;
     }
     compute_checksum_from_q(curr_q, g_raw_frame_bytes, &curr_q_after);
-    // Invoke 会覆写输入区，上一帧必须用调用前缓存更新。
-    memcpy(input_ptr, g_curr_q_shadow, g_raw_frame_bytes);
+    // Invoke 后：当前帧变成下一帧的 prev
+    memcpy(g_prev_q_buffer, curr_q, g_raw_frame_bytes);
 #if FLOW_DBG_FREEZE_PAIR
     if (g_freeze_pair_ready && g_freeze_prev_q != nullptr) {
         memcpy(input_ptr, g_freeze_prev_q, g_raw_frame_bytes);

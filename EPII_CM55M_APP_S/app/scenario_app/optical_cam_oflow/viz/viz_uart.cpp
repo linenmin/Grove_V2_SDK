@@ -284,6 +284,13 @@ static void handle_host_byte(uint8_t byte)
         g_host_cmd_len = 0U;
         return;
     }
+    if (byte == 0xFCU) {
+        g_transport_mode = 3U;  // RAW binary mode
+        // Send a short ACK so the Python script knows we're ready
+        uart_send_literal("\r{\"type\": 0, \"name\": \"RAW_MODE\", \"code\": 0, \"data\": 1}\n");
+        g_host_cmd_len = 0U;
+        return;
+    }
 
     if (byte == '\r' || byte == '\n') {
         if (g_host_cmd_len > 0U) {
@@ -364,4 +371,25 @@ void viz_uart_send_invoke_jpeg(const uint8_t *jpeg_data,
     uart_send(prefix);
     uart_send_base64_stream(jpeg_data, jpeg_size);
     uart_send_literal("\"}}\n");
+}
+
+void viz_uart_send_raw_jpeg(const uint8_t *jpeg_data,
+                           size_t jpeg_size,
+                           uint16_t width,
+                           uint16_t height)
+{
+    if (jpeg_data == nullptr || jpeg_size == 0U || jpeg_size > 0xFFFFU) {
+        return;
+    }
+    // 8-byte binary header: [0xAA][0x55][size_lo][size_hi][w_lo][w_hi][h_lo][h_hi]
+    const uint16_t sz16 = (uint16_t)jpeg_size;
+    const char hdr[8] = {
+        (char)0xAAU, (char)0x55U,
+        (char)(sz16 & 0xFF), (char)((sz16 >> 8) & 0xFF),
+        (char)(width & 0xFF), (char)((width >> 8) & 0xFF),
+        (char)(height & 0xFF), (char)((height >> 8) & 0xFF),
+    };
+    uart_send_bytes(hdr, 8);
+    // Send raw JPEG binary payload directly
+    uart_send_bytes((const char *)jpeg_data, jpeg_size);
 }

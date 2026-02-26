@@ -195,9 +195,47 @@ flowchart TD
 | **▶ 端到端总延迟评估** | **~750 - 800 ms**                                                                                                                                                                | **~320 - 350 ms**                                                                                                                                 | **大幅缩减 400+ ms** | **直接把延迟砍一半以上，达到“抬手即现”的视觉感受！**                   |
 
 > **执行建议**：
-> 这个“全干掉”方案的性价比极高。我们只需要在设备端 `viz_uart.cpp` 增加一个极简的 `UART_MODE_RAW` 分支，再用 50 行 Python 代码写一个上位机窗口，**瞬间就能让这颗 1 Gi MAC 的模组变成体验完美的交互终端**。需要加入 Task List 吗？
+> 这个"全干掉"方案的性价比极高。我们只需要在设备端 `viz_uart.cpp` 增加一个极简的 `UART_MODE_RAW` 分支，再用 50 行 Python 代码写一个上位机窗口。
 
-> **目前最推荐尝试 L2 (跳帧 Viz)**：这是成本最低、无需改前端、且能立竿见影消除 Web 积压背压的方法。
+### 💡 深度分析：自研 Python 上位机的全链路收益
+
+#### 一、软件翻转迁移到上位机
+
+当前 `flow_render.cpp` 中的软件 H-Mirror 会导致：
+- 反向索引 `(out_w-1)-x` 破坏内存连续性，增加 cache miss
+- per-pixel 浮点渲染（`sqrtf`、`atan2f`、`hsv_to_rgb`）本身已是 MCU CPU 密集瓶颈
+
+迁移到 Python 后只需 `cv2.flip(frame, 1)`，主机 CPU/GPU 渲染能力是 WE2 的**数千倍**。
+
+#### 二、内存释放（核心突破 ~60 KiB）
+
+设备端跳过 JPEG 编码和 RGB 渲染后，以下 BSS buffer 可**彻底删除**：
+
+| 缓冲区 | 位置 | 大小 | 能否删除 |
+| :--- | :--- | :--- | :--- |
+| `g_flow_viz_gray` | `viz_publish.cpp:34` | **27 KiB** | ✅ |
+| `g_flow_viz_jpeg` | `viz_publish.cpp:35` | **24 KiB** | ✅ |
+| `g_flow_viz_rgb_block` | `viz_publish.cpp:36` | **4.5 KiB** | ✅ |
+| JPEGENC 库静态数据 | `flow_render.cpp` | **~4 KiB** | ✅ |
+| **总计** | | **~60 KiB** | **全部可释放** |
+
+> ⚠️ 之前 Option C (删 `g_curr_q_shadow`) 冒着 NPU 污染风险才省 81 KiB 但失败了。这个方案**零风险地**释放 60 KiB！
+
+#### 三、推荐实施路线
+
+```
+Phase 1: 设备端增加 UART_MODE_RAW（发二进制 JPEG，去掉 Base64/JSON）
+         + Python 上位机脚本（pyserial + OpenCV 显示 + cv2.flip 镜像）
+         + 去掉 flow_render.cpp 中的软件 H-Mirror
+         → 延迟 800ms → ~350ms，释放 std::string 堆分配
+
+Phase 2: 设备端去掉 flow_render + JPEG 编码，直接发原始 int8 光流矢量
+         Python 端 numpy 做 HSV 渲染 + 镜像（需 UART 2Mbps 或跳帧）
+         → 释放 60 KiB BSS，设备端 CPU 0 渲染开销
+
+Phase 3: MCU 仅运行 "NPU 推理 + 逻辑判断"（纯控制核心）
+         所有可视化全部由上位机承担 → 纯边缘 AI 推理引擎
+```
 
 ## 5. 调试遗留清理建议
 

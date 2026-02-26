@@ -36,12 +36,10 @@ void flow_render_to_gray(uint8_t *out_gray,
     for (int y = 0; y < out_h; ++y) {
         const int row_base = y * out_w;
         for (int x = 0; x < out_w; ++x) {
-            const int src_x = (out_w - 1) - x;  // H-Mirror: selfie view
-            const int i = row_base + src_x;
+            const int i = row_base + x;
             float dx = 0.0f;
             float dy = 0.0f;
             read_flow_dxdy(flow_data, out_stride, out_zp, out_scale, i, &dx, &dy);
-            dx = -dx;  // Flip dx direction to match mirrored coordinates
             const float mag = sqrtf(dx * dx + dy * dy);
 
             // D15: 使用固定增益 0.05 (mag=20px 时饱和)
@@ -158,12 +156,10 @@ size_t flow_render_rgb_to_jpeg_block(const int8_t *flow_data,
         for (int local_y = 0; local_y < rows_in_block; ++local_y) {
             const int y = block_y + local_y;
             for (int x = 0; x < out_w; ++x) {
-                const int src_x = (out_w - 1) - x;  // H-Mirror: selfie view
-                const int i = y * out_w + src_x;
+                const int i = y * out_w + x;
                 float dx = 0.0f;
                 float dy = 0.0f;
                 read_flow_dxdy(flow_data, out_stride, out_zp, out_scale, i, &dx, &dy);
-                dx = -dx;  // Flip dx direction to match mirrored coordinates
 
                 const float mag = sqrtf(dx * dx + dy * dy);
                 float angle = atan2f(dy, dx);

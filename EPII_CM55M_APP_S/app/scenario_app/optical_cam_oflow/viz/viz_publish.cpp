@@ -122,6 +122,7 @@ extern "C" void publish_viz_payload(struct_yolov8_ob_algoResult *algo,
     const uint8_t transport_mode = viz_uart_get_transport_mode();
     const bool send_uart = (transport_mode == 0U || transport_mode == 2U);
     const bool send_spi = (transport_mode == 1U || transport_mode == 2U);
+    const bool send_raw = (transport_mode == 3U);
     const bool need_uart_invoke = send_uart;
     const uint32_t algo_tick_cycles =
         (total_us <= (UINT32_MAX / 400U)) ? (total_us * 400U) : UINT32_MAX;
@@ -166,6 +167,14 @@ extern "C" void publish_viz_payload(struct_yolov8_ob_algoResult *algo,
 #endif
         if (jpeg_sz > 0U) {
             hx_CleanDCache_by_Addr((volatile void *)g_flow_viz_jpeg, jpeg_sz);
+            if (send_raw) {
+                // RAW binary mode: skip Base64/JSON, send binary header + JPEG
+                viz_uart_send_raw_jpeg(g_flow_viz_jpeg,
+                                       jpeg_sz,
+                                       (uint16_t)flow_w,
+                                       (uint16_t)flow_h);
+                return;
+            }
             if (send_uart) {
                 viz_uart_send_device_id_once();
                 if (need_uart_invoke) {

@@ -9,6 +9,8 @@
 extern "C" {
 #include "hx_drv_uart.h"
 }
+#include "xprintf.h"
+#include "console_io.h"
 
 constexpr int kConsoleUartId = 0;
 constexpr size_t kHostCmdBufSize = 128U;
@@ -25,6 +27,17 @@ static bool g_invoke_enabled = true;
 static uint8_t g_model_id = 0U;
 static char g_host_cmd_buf[kHostCmdBufSize] = {0};
 static size_t g_host_cmd_len = 0U;
+
+// Custom putchar wrapper to suppress xprintf output in RAW mode
+static void viz_uart_putchar(unsigned char c)
+{
+    if (g_transport_mode == 3U) {
+        // In RAW binary mode (3), drop all text output to keep UART channel clean
+        return;
+    }
+    // Otherwise, pass through to the default console output
+    console_putchar(c);
+}
 
 static DEV_UART *uart_dev()
 {
@@ -268,26 +281,31 @@ static void handle_host_byte(uint8_t byte)
 {
     if (byte == 0xFFU) {
         g_transport_mode = 0U;
+        xdev_out(console_putchar); // Restore text output
         send_full_device_id_sequence();
         g_host_cmd_len = 0U;
         return;
     }
     if (byte == 0xFEU) {
         g_transport_mode = 1U;
+        xdev_out(console_putchar); // Restore text output
         send_full_device_id_sequence();
         g_host_cmd_len = 0U;
         return;
     }
     if (byte == 0xFDU) {
         g_transport_mode = 2U;
+        xdev_out(console_putchar); // Restore text output
         send_full_device_id_sequence();
         g_host_cmd_len = 0U;
         return;
     }
     if (byte == 0xFCU) {
         g_transport_mode = 3U;  // RAW binary mode
-        // Send a short ACK so the Python script knows we're ready
+        // Send a short ACK before suppressing text
         uart_send_literal("\r{\"type\": 0, \"name\": \"RAW_MODE\", \"code\": 0, \"data\": 1}\n");
+        // Suppress all subsequent xprintf output to guarantee a clean binary channel
+        xdev_out(viz_uart_putchar);
         g_host_cmd_len = 0U;
         return;
     }

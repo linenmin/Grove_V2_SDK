@@ -237,6 +237,22 @@ Phase 3: MCU 仅运行 "NPU 推理 + 逻辑判断"（纯控制核心）
          所有可视化全部由上位机承担 → 纯边缘 AI 推理引擎
 ```
 
+### ⚡ Phase 1 实测反馈 (RAW 二进制 UART 模式)
+
+**实测结果**：光流输出正常，Python `cv2.flip` 镜像工作正常。但 FPS 仅 4.3，低于 Web Toolkit 的 5.8。
+
+**根因分析**：UART 通道冲突 (Console xprintf 与二进制帧混用同一个 UART 0)
+
+| 现象 | 原因 | 影响 |
+| :--- | :--- | :--- |
+| `[sync] Skipped ~730 bytes` 每帧出现 | `ob_log_infer_line` + `ob_log_mag_stats_grid_sample` + `ob_log_out_q_histogram` 每 5 帧一次输出 ~730 字节的纯文本日志，与二进制 JPEG 帧混在同一个 UART 0 上 | Python 必须逐字节扫描同步头，浪费约 8ms/帧 |
+| `Corrupt JPEG data` 偶发 | xprintf 文本恰好在 JPEG 发送过程中被插入，导致 JPEG 数据被"撕裂" | 约 10-15% 的帧被 OpenCV 解码失败或出现伪影 |
+| FPS 4.3 vs Web Toolkit 5.8 | Web Toolkit 用 JSON 文本协议，xprintf 文本不会破坏 JSON 解析器（它只关心 `\r{` 开头的行）。而 RAW 二进制模式中，任何非预期字节都会导致重新同步 | **1.5 FPS 差距完全来自 UART 通道冲突** |
+
+**修复方案 (Phase 1.1)**：当 `transport_mode == 3` (RAW) 时，禁止 `ob_should_log` 返回 true。
+等价于在 RAW 模式下静默所有诊断日志，让 UART 0 成为纯净的二进制数据通道。
+预计修复后 FPS 可达到 **5.5-6.0**（与设备端实际帧率一致），且 JPEG 损坏率降为 0。
+
 ## 5. 调试遗留清理建议
 
 | 遗留项                            | 位置                              | 类型     | 建议                         |

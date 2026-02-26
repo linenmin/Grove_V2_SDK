@@ -227,3 +227,34 @@ RGB JPEG 颜色丰富 → 高熵 → 压缩后体积大 → 超出 24KB buffer �
 ### R4: 切换到彩色光流
 
 **修改**：`FLOW_VIZ_RGB_OUTPUT` → `1`，增益保持 `mag * 0.05f`。
+
+### R4 结果 (2026-02-25 23:21) ✅✅
+
+**现象**：✅ **几乎完美的彩色光流输出！**
+- 运动方向正确映射到 HSV 颜色
+- 背景接近黑色，运动物体有清晰的彩色光流形状
+- ⚡ **Zoom-in / FOV 问题也同时被解决**：之前 JPEG 和 RAW RGB 之间的视场差异消失了
+
+**Log**: `logs/pipeline/pipeline_nomodel_optical_cam_oflow_20260225_231117.log`
+**Commit**: `18f5ab2` ("finish demo yes")
+
+---
+
+## 最终总结
+
+### 解决的 Bugs
+
+| Bug                       | 根因                                                                                            | 修复                                              |
+| ------------------------- | ----------------------------------------------------------------------------------------------- | ------------------------------------------------- |
+| **当前帧未进入模型输入**  | `memcpy` 只写了 82,944 bytes (一帧) 到 165,888 bytes (两帧) 的 6 通道 tensor，curr 帧从未被写入 | 实现 `interleave_prev_curr_nhwc()` 像素级交错拼装 |
+| **输出布局误判 (Planar)** | 之前判断为 Planar 是因为输入错误导致输出是噪声，Planar 误读碰巧"看起来好"                       | `FLOW_VIZ_OUT_PLANAR` → `0` (NHWC)                |
+| **可视化饱和**            | `val = mag * 2.0f` 使 0.5px 以上的位移全部饱和                                                  | 增益降至 `mag * 0.05f`                            |
+| **反方向粉色光流**        | 根因就是输入缺失 curr 帧                                                                        | 同上第一条修复                                    |
+| **Zoom-in / FOV 差异**    | 同上，正确输入后 FOV 匹配自然恢复                                                               | 同上                                              |
+
+### 修改的文件
+
+| 文件                                                                                                                                                         | 关键修改                                                                        |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------- |
+| [cvapp_yolov8n_ob.cpp](file:///home/enmin/Seeed_Grove_Vision_AI_Module_V2/EPII_CM55M_APP_S/app/scenario_app/optical_cam_oflow/pipeline/cvapp_yolov8n_ob.cpp) | 新增 `interleave_prev_curr_nhwc()`，`g_prev_q_buffer` 存前帧，Invoke 前交错拼装 |
+| [flow_render.cpp](file:///home/enmin/Seeed_Grove_Vision_AI_Module_V2/EPII_CM55M_APP_S/app/scenario_app/optical_cam_oflow/viz/flow_render.cpp)                | `PLANAR=0`, `REMOVE_GLOBAL_MOTION=0`, 增益 `mag*0.05f`                          |

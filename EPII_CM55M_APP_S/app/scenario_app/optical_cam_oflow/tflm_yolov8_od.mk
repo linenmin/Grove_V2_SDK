@@ -1,6 +1,7 @@
 override SCENARIO_APP_SUPPORT_LIST := $(APP_TYPE)
 override SCENARIO_APP_SUPPORT_LIST += $(APP_TYPE)/app
 override SCENARIO_APP_SUPPORT_LIST += $(APP_TYPE)/pipeline
+override SCENARIO_APP_SUPPORT_LIST += $(APP_TYPE)/preprocess
 # optical_cam_oflow 使用 camera 输入，不编译 io/ob_sd_frame（SD 读帧）
 override SCENARIO_APP_SUPPORT_LIST += $(APP_TYPE)/io/camera
 override SCENARIO_APP_SUPPORT_LIST += $(APP_TYPE)/perf
@@ -18,7 +19,7 @@ APPL_DEFINES += -DEVT_DATAPATH
 APPL_DEFINES += -DUART_SEND_ALOGO_RESEULT
 APPL_DEFINES += -DVIZ_UART_MODE
 # plan-008: make VIZ_CAMERA=1 时强制发送摄像头画面，用于 agent 可见调试闭环
-ifneq ($(VIZ_CAMERA),)
+ifeq ($(VIZ_CAMERA),1)
 APPL_DEFINES += -DFORCE_VIZ_CAMERA_JPEG
 endif
 

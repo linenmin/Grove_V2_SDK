@@ -1,79 +1,49 @@
-# Plan 000：上下文索引（单入口）
+# Plan 000：项目全局地图与上下文索引
 
 ## 1. 目的
 
-减少调试会话中的重复读文件开销；新会话默认只读本文件 + 最新快照 + 最新调试 plan。
+本文件为项目的“单入口”指南。旨在保留所有调试历史细节的同时，提供清晰的当前技术状态地图，确保新会话能快速定位到核心结论。
 
-## 2. 会话加载顺序（强约束）
+## 2. 核心里程碑与查阅指南（按需回溯）
 
-1. 先读：`plan/plan-000-context-index.md`
-2. 再读：`logs/context/context_snapshot_latest.md`
-3. 最后读：`plan/plan-009-flow-visualization-agent-debug.md`（仅最新增量区段）
-4. 仅在有证据缺口时，按需回看 `plan-008` 及更早计划
+| 阶段              | 核心计划                                                                                                                           | 关键结论 / 遗留细节                                                                          |
+| :---------------- | :--------------------------------------------------------------------------------------------------------------------------------- | :------------------------------------------------------------------------------------------- |
+| **A. 基础构建**   | [plan-001~003](file:///home/enmin/Seeed_Grove_Vision_AI_Module_V2/plan/plan-001-optical-sd-pipeline.md)                            | 确立了 6-channel NHWC 输入结构与 SD 卡存储逻辑。                                             |
+| **B. 可视化突破** | [plan-004~006](file:///home/enmin/Seeed_Grove_Vision_AI_Module_V2/plan/plan-006-optical-cam-oflow-flow-visualization-execution.md) | 解决了 Himax 屏幕驱动与 SPI 协议对齐问题，实现实时预览。                                     |
+| **C. 深度分析**   | [plan-012](file:///home/enmin/Seeed_Grove_Vision_AI_Module_V2/plan/plan-012-flow-stripe-resolution-analysis.md)                    | **[重要]** 确立了 1.9MB SRAM 限制、Scale/Quantization 对齐以及 $144 \times 192$ 分辨率决策。 |
+| **D. 根因修复**   | [plan-015](file:///home/enmin/Seeed_Grove_Vision_AI_Module_V2/plan/plan-015-reverse-flow-fix-and-cleanup.md)                       | 修复了反向光流 Bug（输入交错缺失）、增益设置、以及 Planar vs NHWC 的终极判定。               |
+| **E. 优化分析**   | [plan-016](file:///home/enmin/Seeed_Grove_Vision_AI_Module_V2/plan/plan-016-memory-latency-cleanup.md)                             | **[最新]** 全链路内存地图与优化选项 (A-E)、延迟优化 (L1-L4)、调试遗留清理。                  |
 
-## 3. 当前活动上下文（2026-02-24）
+---
 
-- 当前主计划：`plan/plan-010-vela-input-channel-issue.md`
-- 当前问题：Vela 编译后模型输入通道映射问题， 导致第二帧未被有效消费
-- 最新关键日志：`logs/pipeline/pipeline_with-model_optical_cam_oflow_20260224_122631.log`
-- 最新关键摘要：`logs/pipeline/pipeline_with-model_optical_cam_oflow_20260224_122631.key.summary.txt`
-- 最新帧输出目录：`logs/flow_frames/latest/`
-- 快照生成脚本：`scripts/build_context_snapshot.sh`
+## 3. 当前技术快照 (2026-02-26)
 
-## 4. 关键配置锚点（代码事实）
+### 3.1 核心状态
+- **当前分辨率**: $144 \times 192$ (4:3) —— 正在测试 $150 \times 200$。
+- **内存占用**: `tensor_arena` = 1432 KiB (1188 KiB peak)。
+- **输入布局**: **NHWC** (Interleaved)。必须手动交错 `prev` 和 `curr` 帧。
+- **输出布局**: **NHWC** (Planar=0)。量化参数 `scale ≈ 0.5, zp = -1`。
+- **可视化增益**: `mag * 0.05` (避免饱和)。
 
-- `pipeline/cvapp_yolov8n_ob.cpp`
-- `tensor_arena_size = 1408 * 1024`
-- `FLOW_DBG_FREEZE_PAIR = 0`
-- `FLOW_DBG_SYNTH_INJECT = 0`
+### 3.2 关键文件索引
+- **核心逻辑**: `pipeline/cvapp_yolov8n_ob.cpp` (包含了 `interleave` 修复)。
+- **渲染算法**: `viz/flow_render.cpp` (控制颜色扩展与幅值计算)。
+- **模型导出**: `EdgeFlowNet/sramTest/run_sram_test.py` (包含代表性数据集生成)。
 
-- `viz/flow_render.cpp`
-- `FLOW_VIZ_FIXED_SCALE = 0`
-- `FLOW_VIZ_TEST_PATTERN = 0`
-- `FLOW_VIZ_LIGHT_SMOOTH = 1`
-- `FLOW_VIZ_REMOVE_ROW_BIAS = 1`
+---
 
-- `io/camera/cam_input.cpp`
-- `CAM_INPUT_USE_BGR = 1`
-- `CAM_INPUT_USE_HELIUM_RESIZE = 1`
+## 4. 文档管理方法（方法论）
 
-- `config/common_config.h`
-- `YOLOV8_OBJECT_DETECTION_FLASH_ADDR = 0x3AB7B000`
+为了防止信息淹没，我们采用 **“三层结构”**：
 
-## 5. 标准命令（先快照，后调试）
+1.  **Level 1: 索引档 (本文件)** —— 仅记录“主指针”和“核心结论”。每当一个 Plan 完成，在此更新结论。
+2.  **Level 2: 知识库 (KNOWLEDGE_BASE.md)** —— 提取跨 Plan 的通用事实（如寄存器地址、SRAM 布局、硬件坑）。
+3.  **Level 3: 实验日志 (plan-0XX.md)** —— 保留所有失败的尝试、原始日志和推导过程。**永远不修改旧日志**，只创建新编号计划。
 
-```bash
-# 1) 生成上下文快照（每轮调试后执行）
-bash scripts/build_context_snapshot.sh
+---
 
-# 2) 常用抓取（不改固件，直抓 UART）
-python3 xmodem/serReadLoop.py \
-  --port /dev/ttyACM0 \
-  --baudrate 921600 \
-  --timeout 1 \
-  --duration 18 \
-  --log-file logs/pipeline/pipeline_capture_manual.log \
-  --keyword "initial done" \
-  --keyword '"name": "INVOKE"'
+## 5. 接下来操作
 
-# 3) 从日志提取 INVOKE 图像
-python3 scripts/extract_invoke_frames_from_log.py \
-  --log logs/pipeline/pipeline_capture_manual.log \
-  --output-dir logs/flow_frames/latest \
-  --max-frames 10
-```
-
-## 6. 更新协议（增量）
-
-1. 每次实测后，只在最新 plan 追加一条 `Rxx`，不回写历史 R 段。
-2. 每次实测后，执行 `scripts/build_context_snapshot.sh` 刷新 `logs/context/context_snapshot_latest.md`。
-3. 本文件只维护“入口/指针/流程”，不记录细粒度实验细节。
-4. 若“当前主计划”切换（例如 plan-010），只改本文件第 3 节指针与日期。
-
-## 7. 触发条件（何时回读旧计划）
-
-- 仅当出现以下任一情况才回读 `plan-001~008`：
-- 当前日志与历史结论矛盾
-- 关键宏与历史记录不一致且无法定位
-- 需要追溯某个 patch 的首次引入原因
-
+- 优先读取：`plan-000-context-index.md` (本文件)
+- 最新进展：`plan-016-memory-latency-cleanup.md`
+- 硬件事实查询：`docs/KNOWLEDGE_BASE.md` (Plan 中提取的精华)

@@ -151,52 +151,6 @@ void ob_log_infer_line(int loop_cnt,
             total_us % 1000);
 }
 
-void ob_log_col_mean_mag_sample(const int8_t *out_data,
-                                int out_w,
-                                int out_h,
-                                int out_c,
-                                int out_zp,
-                                float out_scale,
-                                int sample_step)
-{
-    if (out_data == nullptr || out_w <= 0 || out_h <= 0 || out_c < 2 || sample_step <= 0) {
-        return;
-    }
-
-    const int stride = out_c;
-    /* plan-007: 改为密集采样连续列，消除混叠掩盖。输出前 16 列 */
-    const int n_cols = (out_w > 16) ? 16 : out_w;
-
-    xprintf("[col_mean_mag] step=1");
-    for (int c = 0; c < n_cols; ++c) {
-        double sum_mag = 0.0;
-        for (int r = 0; r < out_h; ++r) {
-            const int idx = (r * out_w + c) * stride;
-            const float dx = ((float)out_data[idx + 0] - (float)out_zp) * out_scale;
-            const float dy = ((float)out_data[idx + 1] - (float)out_zp) * out_scale;
-            sum_mag += (double)sqrtf(dx * dx + dy * dy);
-        }
-        const int mean_mag_int = (int)((sum_mag / (double)out_h) * 1000.0);
-        xprintf(" c%d=%d", c, mean_mag_int);
-    }
-    xprintf(" |");
-    /* 附加中间区域的几列，帮助确认 */
-    const int mid_c = out_w / 2;
-    const int max_mid = (mid_c + 8 > out_w) ? out_w : mid_c + 8;
-    for (int c = mid_c; c < max_mid; ++c) {
-        double sum_mag = 0.0;
-        for (int r = 0; r < out_h; ++r) {
-            const int idx = (r * out_w + c) * stride;
-            const float dx = ((float)out_data[idx + 0] - (float)out_zp) * out_scale;
-            const float dy = ((float)out_data[idx + 1] - (float)out_zp) * out_scale;
-            sum_mag += (double)sqrtf(dx * dx + dy * dy);
-        }
-        const int mean_mag_int = (int)((sum_mag / (double)out_h) * 1000.0);
-        xprintf(" c%d=%d", c, mean_mag_int);
-    }
-
-    xprintf("\r\n");
-}
 
 void ob_log_mag_stats_grid_sample(const int8_t *out_data,
                                   int out_w,

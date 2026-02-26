@@ -37,11 +37,22 @@ Use this skill when requests include terms such as:
 
 Before deep analysis, read in this order:
 
-1. `plan/plan-000-context-index.md`
-2. `logs/context/context_snapshot_latest.md`
-3. Latest debug plan file from the snapshot
+1. `plan/plan-000-context-index.md` (Project Map)
+2. `docs/KNOWLEDGE_BASE.md` (Technical Constants)
+3. `logs/context/context_snapshot_latest.md`
+4. Latest debug plan file from the snapshot
 
 Do not default to full reads across all `plan/` files.
+
+## Post-Iteration Governance
+
+Every time a `run_optical_pipeline.sh` completes with a new technical finding (e.g., successful R-segment in a plan):
+
+1. **Update Plan Index**: Add the new milestone/conclusion to `plan/plan-000-context-index.md`.
+2. **Distill Knowledge**: If new constants or hardware facts are found, move them into `docs/KNOWLEDGE_BASE.md`.
+3. **Refresh Snapshot**: Run `bash scripts/build_context_snapshot.sh`.
+
+Refer to [.cursor/rules/project-governance.mdc](file:///home/enmin/Seeed_Grove_Vision_AI_Module_V2/.cursor/rules/project-governance.mdc) for detailed enforcement rules.
 
 ## Execution Steps
 

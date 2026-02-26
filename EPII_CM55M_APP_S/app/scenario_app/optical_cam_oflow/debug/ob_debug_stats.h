@@ -49,14 +49,6 @@ void ob_log_infer_line(int loop_cnt,
                        uint32_t infer_us,
                        uint32_t total_us);
 
-/** plan-007 H1: 输出 flow 列均值采样，验证条纹是否与数据周期对齐 */
-void ob_log_col_mean_mag_sample(const int8_t *out_data,
-                                int out_w,
-                                int out_h,
-                                int out_c,
-                                int out_zp,
-                                float out_scale,
-                                int sample_step);
 
 /** plan-009 R7: 输出整帧 mag 统计与 3x3 网格点 dx/dy，区分常量场与渲染映射问题 */
 void ob_log_mag_stats_grid_sample(const int8_t *out_data,

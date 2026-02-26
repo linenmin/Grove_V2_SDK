@@ -388,40 +388,43 @@ int cisdp_sensor_init()
 		return -1;
 	}
 	else
-	{
-		dbg_printf(DBG_LESS_INFO, "OV5647 AE boost setting applied\r\n");
-	}
 
-#if 0	//Set mirror setting here if needed
-    HX_CIS_SensorSetting_t HM2170_mirror_setting[] = {
-            {HX_CIS_I2C_Action_W, 0x0101, CIS_MIRROR_SETTING},
-    };
+    {
+        HX_CIS_SensorSetting_t ov5647_mirror_h[] = {
+                {HX_CIS_I2C_Action_W, 0x3821, 0x03}, // Toggle bit 2
+        };
+        HX_CIS_SensorSetting_t ov5647_mirror_v[] = {
+                {HX_CIS_I2C_Action_W, 0x3820, 0x45}, // Toggle bit 1
+        };
+        HX_CIS_SensorSetting_t ov5647_mirror_hv[] = {
+                {HX_CIS_I2C_Action_W, 0x3821, 0x03},
+                {HX_CIS_I2C_Action_W, 0x3820, 0x45},
+        };
 
-    if(hx_drv_cis_setRegTable(HM2170_mirror_setting, HX_CIS_SIZE_N(HM2170_mirror_setting, HX_CIS_SensorSetting_t))!= HX_CIS_NO_ERROR)
-    {
-    	dbg_printf(DBG_LESS_INFO, "HM2170 Init Mirror 0x%02X by app fail \r\n", HM2170_mirror_setting[0].Value);
-        return -1;
-    }
-    else
-    {
 #if (CIS_MIRROR_SETTING == 0x01)
-    	dbg_printf(DBG_LESS_INFO, "HM2170 Init Horizontal Mirror by app \n");
+        if(hx_drv_cis_setRegTable(ov5647_mirror_h, HX_CIS_SIZE_N(ov5647_mirror_h, HX_CIS_SensorSetting_t)) == HX_CIS_NO_ERROR) {
+            dbg_printf(DBG_LESS_INFO, "OV5647 Init Horizontal Mirror by app \n");
+        }
 #elif (CIS_MIRROR_SETTING == 0x02)
-    	dbg_printf(DBG_LESS_INFO, "HM2170 Init Vertical Mirror by app \n");
+        if(hx_drv_cis_setRegTable(ov5647_mirror_v, HX_CIS_SIZE_N(ov5647_mirror_v, HX_CIS_SensorSetting_t)) == HX_CIS_NO_ERROR) {
+            dbg_printf(DBG_LESS_INFO, "OV5647 Init Vertical Mirror by app \n");
+        }
 #elif (CIS_MIRROR_SETTING == 0x03)
-    	dbg_printf(DBG_LESS_INFO, "HM2170 Init Horizontal & Vertical Mirror by app \n");
+        if(hx_drv_cis_setRegTable(ov5647_mirror_hv, HX_CIS_SIZE_N(ov5647_mirror_hv, HX_CIS_SensorSetting_t)) == HX_CIS_NO_ERROR) {
+            dbg_printf(DBG_LESS_INFO, "OV5647 Init Horizontal & Vertical Mirror by app \n");
+        }
 #else
-    	dbg_printf(DBG_LESS_INFO, "HM2170 Init Mirror Off by app \n");
+        dbg_printf(DBG_LESS_INFO, "OV5647 Init Mirror Off (Default 0x07) by app \n");
 #endif
     }
-#endif
+
 
     return 0;
 }
 
-
 int cisdp_dp_init(bool inp_init, SENSORDPLIB_PATH_E dp_type, evthandlerdp_CBEvent_t cb_event, uint32_t jpg_ratio, APP_DP_INP_SUBSAMPLE_E subs)
 {
+
     HW2x2_CFG_T hw2x2_cfg;
     CDM_CFG_T cdm_cfg;
     HW5x5_CFG_T hw5x5_cfg;

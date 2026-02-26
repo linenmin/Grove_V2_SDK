@@ -16,7 +16,7 @@ namespace {
 
 constexpr uint32_t kFrameWaitRetry = 1000;
 constexpr uint32_t kFrameWaitDelayMs = 2;
-constexpr uint32_t kInterFrameDelayMs = 33;
+constexpr uint32_t kInterFrameDelayMs = 15;
 
 // R10 result: keep BGR as default; RGB A/B did not improve flow readability.
 #ifndef CAM_INPUT_USE_BGR

@@ -120,19 +120,42 @@ def main():
             sys.exit(1)
 
     print(f"[init] Opening {port} at {baud} baud...")
-    ser = serial.Serial(port, baud, timeout=2.0)
-    time.sleep(0.5)
-
-    # Send 0xFC to switch device to RAW binary mode
-    print("[init] Sending 0xFC to enter RAW binary mode...")
-    ser.write(bytes([0xFC]))
-    ser.flush()
-    time.sleep(0.5)
-
-    # Drain any JSON ACK response
-    if ser.in_waiting > 0:
-        ack = ser.read(ser.in_waiting)
-        print(f"[init] Device ACK: {ack.decode('utf-8', errors='replace').strip()}")
+    ser = serial.Serial()
+    ser.port = port
+    ser.baudrate = baud
+    ser.timeout = 0.5
+    # Try to prevent board reset on Windows by clearing DTR/RTS before open
+    ser.dtr = False
+    ser.rts = False
+    ser.open()
+    
+    # Handshake loop: Repeatedly send 0xFC until we get the RAW_MODE ACK.
+    # If the board resets, this waits for the app to finish booting.
+    print("[init] Sending 0xFC to enter RAW binary mode (waiting for ACK)...")
+    ack_received = False
+    for _ in range(15):  # Try for up to ~7.5 seconds
+        ser.write(bytes([0xFC]))
+        ser.flush()
+        time.sleep(0.1)
+        
+        if ser.in_waiting > 0:
+            resp_bytes = ser.read(ser.in_waiting)
+            resp_str = resp_bytes.decode('utf-8', errors='ignore')
+            if 'RAW_MODE' in resp_str:
+                print("\n[init] Device ACK: RAW_MODE activated!")
+                ack_received = True
+                break
+            else:
+                # Print device boot logs to console
+                lines = resp_str.split('\n')
+                for line in lines:
+                    line = line.strip()
+                    if line:
+                        print(f"[dev] {line}")
+        time.sleep(0.4)
+        
+    if not ack_received:
+        print("\n[warn] Did not receive RAW_MODE ACK. Will try reading anyway...")
 
     print(f"[ready] Listening for binary JPEG frames...")
     print(f"[info] Press 'q' to quit, 'm' to toggle mirror, 's' to save screenshot")

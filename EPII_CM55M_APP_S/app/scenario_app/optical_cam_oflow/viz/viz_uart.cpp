@@ -8,6 +8,7 @@
 
 extern "C" {
 #include "hx_drv_uart.h"
+#include "hx_drv_timer.h"
 }
 #include "xprintf.h"
 #include "console_io.h"
@@ -57,7 +58,17 @@ static void uart_send_bytes(const char *data, size_t len)
     size_t sent = 0U;
     while (sent < len) {
         const size_t chunk = ((len - sent) < 16U) ? (len - sent) : 16U;
-        sent += dev->uart_write(data + sent, chunk);
+        const int32_t written = dev->uart_write(data + sent, chunk);
+        if (written > 0) {
+            sent += written;
+            
+            // Throttle RAW transmission (mode 3) to prevent USB-to-UART bridge FIFO overruns.
+            // Sending 6000 bytes at 921.6kbps instantly overflows the CH340 host buffer.
+            // 150us delay per 16 bytes limits the burst rate, solving JPEG corruption.
+            if (g_transport_mode == 3U) {
+                hx_drv_timer_cm55s_delay_us(150, TIMER_STATE_DC);
+            }
+        }
     }
 }
 

@@ -36,6 +36,11 @@ MODEL_CONFIG = {
 VARIANT_TO_MODULE = {
     "baseline": "network.MultiScaleResNet_bilinear",
     "addskip": "network.MultiScaleResNet_bilinear_addskip",
+    "eca": "network.MultiScaleResNet_bilinear_eca",
+    "globalgate2x": "network.MultiScaleResNet_bilinear_globalgate2x",
+    "globalgate4x": "network.MultiScaleResNet_bilinear_globalgate4x",
+    "globalgate4x_eca": "network.MultiScaleResNet_bilinear_globalgate4x_eca",
+    "liteaspp": "network.MultiScaleResNet_bilinear_liteaspp",
 }
 
 

@@ -44,6 +44,49 @@
 - `168x224` addskip 板端也可正常启动，但 `infer ≈ 182.055 ms`，算法 FPS 约 `4.772`。
 - 相比 `168x224` baseline，`168x224` addskip 仍然更慢，且没有带来 `SRAM peak` 改善，因此不能作为“通过改分辨率挽救 addskip”的有效路径。
 - `168x224` baseline 相比 `172x224` baseline 略快，说明它可以保留为一个可继续复验的 baseline 分辨率候选，但当前不改变 `R1 addskip` 的结论。
+- `R2 Lite ASPP` 已在 `172x224` 上完成 `Vela -> 板端` 全流程验证，改造位置只在 bottleneck，采用 `1x1 + dilation rate 2/4 + residual add`。
+- `R2 Lite ASPP` 的 Vela `SRAM peak` 仍为 `1419264 B = 1386.00 KiB`，与 baseline 持平，peak hotspot 仍是最终 `ResizeBilinear_1`。
+- `R2 Lite ASPP` 没有把 peak 从 decoder 尾段前移；最终 `ResizeBilinear_1` 的 `Util%` 仍约 `6.08%`，与 baseline 基本一致。
+- `R2 Lite ASPP` 的新增瓶颈分支主要成本来自 `lite_aspp_rate4` 与 `lite_aspp_rate2` 两个 dilated conv，Vela `Network%` 分别约 `2.58%` 与 `1.38%`，不是尾部 resize hotspot 恶化。
+- `R2 Lite ASPP` 的 Vela 预估推理时间从 baseline `173.149 ms` 升到 `181.016 ms`，约增加 `4.54%`。
+- `R2 Lite ASPP` 的 off-chip flash 占用从 baseline `2776.391 KiB` 升到 `3159.953 KiB`，说明它在权重体积上也明显更重。
+- `R2 Lite ASPP` 板端可正常启动，`model io` 仍为 `in(h=172,w=224,c=6) out(h=176,w=224,c=2)`，`INVOKE resolution` 仍为 `[224, 176]`。
+- `R2 Lite ASPP` 板端 `infer ≈ 186.851 ms`，`total ≈ 214.657 ms`，按当前口径折算算法 FPS 约 `4.66`。
+- 相比 baseline 的 `infer ≈ 178.513 ms` / `total ≈ 206.3 ms` / `FPS ≈ 4.846`，`R2 Lite ASPP` 在不改善 `SRAM peak` 的前提下进一步拉低 FPS，因此当前应标记为“可行但不保留”。
+- `R3 ECA-style channel attention` 已在 `172x224` 上完成 `Vela -> 板端` 全流程验证，位置放在 bottleneck、`/8` decoder 和 `/4` decoder 三个低中分辨率阶段。
+- `R3 ECA` 使用 `MEAN -> RESHAPE -> Conv1D-style Conv2D -> LOGISTIC -> MUL` 的轻量门控路径，Vela 可稳定编译，没有出现不支持的 lowering。
+- `R3 ECA` 的 Vela `SRAM peak` 仍为 `1419264 B = 1386.00 KiB`，与 baseline 持平，peak hotspot 仍是最终 `ResizeBilinear_1`。
+- `R3 ECA` 没有把 peak 前移，也没有恶化最终 `ResizeBilinear_1` 的 `Util%`；该 hotspot 仍约 `6.08%`。
+- `R3 ECA` 的新增 attention 分支本身很轻：三个 `Conv1D-style` channel mixing 节点的单层 `Network%` 都接近 `0.00%`，主要额外代价来自中分辨率 `MUL`，但仍明显小于 `Lite ASPP` 的 dilated conv 分支。
+- `R3 ECA` 的 Vela 预估推理时间从 baseline `173.149 ms` 升到 `175.231 ms`，只增加约 `1.20%`。
+- `R3 ECA` 的 off-chip flash 占用从 baseline `2776.391 KiB` 小幅升到 `2823.641 KiB`，增量远小于 `Lite ASPP`。
+- `R3 ECA` 板端可正常启动，`model io` 仍为 `in(h=172,w=224,c=6) out(h=176,w=224,c=2)`，`INVOKE resolution` 仍为 `[224, 176]`，arena 仍保留 `32 B` 余量。
+- `R3 ECA` 板端 `infer ≈ 180.035 ms`，`total ≈ 207.842 ms`。
+- 相比 baseline 的 `infer ≈ 178.513 ms` / `total ≈ 206.3 ms`，`R3 ECA` 只带来很小的时延增量，同时保持 `SRAM peak` 不变，因此当前应标记为“可行且优先保留”。
+- 截至 `R1/R2/R3` 三轮对比，`R3 ECA` 是目前最接近目标约束的改造：比 `addskip` 和 `Lite ASPP` 更能控制 `FPS` 损失，同时没有恶化 `SRAM peak`。
+- 基于 `R3` 的稳定 attention 原语，新增了 `globalgate4x`：从 bottleneck 提取全局均值向量，经 `1x1 conv + sigmoid` 后跨层广播到 decoder `1/4` 特征图。
+- `globalgate4x` 的 Vela `SRAM peak` 仍为 `1419264 B = 1386.00 KiB`，与 baseline、`R3 ECA` 持平，peak hotspot 仍是最终 `ResizeBilinear_1`。
+- `globalgate4x` 的跨层上下文向量本身几乎不占空间；Vela 报告中真正的额外成本主要是 `global_gate_4x_scale` 这次 `1/4` 分辨率 `MUL`，而不是 `mean` 或 `proj`。
+- `globalgate4x` 的 Vela 预估推理时间是 `174.358 ms`，比 `R3 ECA` 的 `175.231 ms` 还略低，只比 baseline `173.149 ms` 高约 `0.70%`。
+- `globalgate4x` 的 off-chip flash 占用是 `2804.969 KiB`，同样低于 `R3 ECA` 的 `2823.641 KiB`。
+- `globalgate4x` 板端可正常启动，`model io` 仍为 `in(h=172,w=224,c=6) out(h=176,w=224,c=2)`，arena 仍保留 `32 B` 余量。
+- `globalgate4x` 板端 `infer ≈ 179.675 ms`，`total ≈ 207.481 ms`。
+- 相比 baseline 的 `infer ≈ 178.513 ms` / `total ≈ 206.3 ms`，`globalgate4x` 只带来极小的时延增量；相比 `R3 ECA` 的 `infer ≈ 180.035 ms` / `total ≈ 207.842 ms`，它还略优一些。
+- 截至当前所有实验，`globalgate4x` 是最值得保留的版本：保持 `SRAM peak` 不变，板端性能最接近 baseline，同时比 `R3 ECA` 更轻。
+- `globalgate2x` 已在 `172x224` 上完成 `Vela -> 板端` 全流程验证：它把同样的 bottleneck 全局向量广播到 decoder `1/2` 特征图。
+- `globalgate2x` 的 Vela `SRAM peak` 仍为 `1419264 B = 1386.00 KiB`，peak hotspot 仍是最终 `ResizeBilinear_1`，没有触发新的内存峰值。
+- `globalgate2x` 的主要额外成本集中在 `global_gate_2x_scale` 这次 `1/2` 分辨率 `MUL`；该节点在 Vela 报告里单层 `SRAM Usage = 473120 B`、`Network% ≈ 0.68`，明显重于 `globalgate4x` 的 `1/4` 门控。
+- `globalgate2x` 的 Vela 预估推理时间约 `174.782 ms`，虽然仍接近 baseline，但已略差于 `globalgate4x` 的 `174.358 ms`。
+- `globalgate2x` 板端可正常启动，`model io` 仍为 `in(h=172,w=224,c=6) out(h=176,w=224,c=2)`，`INVOKE resolution` 仍为 `[224, 176]`。
+- `globalgate2x` 板端 `infer ≈ 180.089 ms`，`total ≈ 207.893 ms`，略差于 `globalgate4x`，也没有优于 `R3 ECA`。
+- 结论上，`globalgate2x` 证明“跨层全局门控可以安全推到更高尺度”，但在当前约束下不值得替代 `globalgate4x`。
+- 新增组合实验 `globalgate4x_eca`：保留 `R3 ECA` 的 bottleneck、`/8`、`/4` 层内轻门控，并额外叠加 `globalgate4x` 的跨层 `1/4` 全局门控。
+- `globalgate4x_eca` 的 Vela `SRAM peak` 仍为 `1419264 B = 1386.00 KiB`，peak hotspot 仍是最终 `ResizeBilinear_1`，说明组合并未突破当前峰值上限。
+- `globalgate4x_eca` 的额外代价主要来自 `eca_decoder_4x_pre_scale` 与 `global_gate_4x_scale` 在同一 `1/4` 阶段叠加；其中前者单层 `Network% ≈ 0.34`，后者也约 `0.34`。
+- `globalgate4x_eca` 的 Vela 预估推理时间升到 `176.45 ms`，已经明显高于 `globalgate4x` 与 `globalgate2x`。
+- `globalgate4x_eca` 板端可正常启动，日志中 `initial done` 与 `INVOKE` 全命中，`model io` 仍保持 `172x224 -> 176x224`。
+- `globalgate4x_eca` 板端 `infer ≈ 181.198 ms`，`total ≈ 209.005 ms`，劣于 `globalgate4x`、`globalgate2x` 和 `R3 ECA`。
+- 组合实验的结论是：当前 `1/4` 阶段已经不适合继续叠加多个门控；若后续还想继续加表达力，应优先避免在同一高活跃阶段再叠 `MUL`。
 
 ## Technical Decisions
 
@@ -89,6 +132,26 @@
   `/home/enmin/Seeed_Grove_Vision_AI_Module_V2/logs/pipeline/pipeline_with-model_optical_cam_oflow_20260313_182747.log`
 - `168x224` addskip board log:
   `/home/enmin/Seeed_Grove_Vision_AI_Module_V2/logs/pipeline/pipeline_with-model_optical_cam_oflow_20260313_183003.log`
+- `R2 Lite ASPP` Vela dir:
+  `/home/enmin/Seeed_Grove_Vision_AI_Module_V2/tools/model_export/optical_flow_144x192/output_bilinear_liteaspp/172x224`
+- `R2 Lite ASPP` board log:
+  `/home/enmin/Seeed_Grove_Vision_AI_Module_V2/logs/pipeline/pipeline_with-model_optical_cam_oflow_20260313_184001.log`
+- `R3 ECA` Vela dir:
+  `/home/enmin/Seeed_Grove_Vision_AI_Module_V2/tools/model_export/optical_flow_144x192/output_bilinear_eca/172x224`
+- `R3 ECA` board log:
+  `/home/enmin/Seeed_Grove_Vision_AI_Module_V2/logs/pipeline/pipeline_with-model_optical_cam_oflow_20260313_184842.log`
+- `globalgate4x` Vela dir:
+  `/home/enmin/Seeed_Grove_Vision_AI_Module_V2/tools/model_export/optical_flow_144x192/output_bilinear_globalgate4x/172x224`
+- `globalgate4x` board log:
+  `/home/enmin/Seeed_Grove_Vision_AI_Module_V2/logs/pipeline/pipeline_with-model_optical_cam_oflow_20260313_193049.log`
+- `globalgate2x` Vela dir:
+  `/home/enmin/Seeed_Grove_Vision_AI_Module_V2/tools/model_export/optical_flow_144x192/output_bilinear_globalgate2x/172x224`
+- `globalgate2x` board log:
+  `/home/enmin/Seeed_Grove_Vision_AI_Module_V2/logs/pipeline/pipeline_with-model_optical_cam_oflow_20260313_193850.log`
+- `globalgate4x_eca` Vela dir:
+  `/home/enmin/Seeed_Grove_Vision_AI_Module_V2/tools/model_export/optical_flow_144x192/output_bilinear_globalgate4x_eca/172x224`
+- `globalgate4x_eca` board log:
+  `/home/enmin/Seeed_Grove_Vision_AI_Module_V2/logs/pipeline/pipeline_with-model_optical_cam_oflow_20260313_194450.log`
 - supported ops copy:
   `/home/enmin/Seeed_Grove_Vision_AI_Module_V2/tools/model_export/optical_flow_144x192/vela/SUPPORTED_OPS.md`
 

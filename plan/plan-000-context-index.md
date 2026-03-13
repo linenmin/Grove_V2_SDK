@@ -31,6 +31,14 @@
 - **R1 addskip 原因归纳**: 变慢主要来自新增 `CONV + PAD + ADD`，不是主 hotspot `ResizeBilinear_1` 的 `Util%` 恶化；该 hotspot 仍约 `6.08%`。
 - **168x224 分辨率复验**: `168x224 -> 176x224` 仍保持 `1386.00 KiB` Vela 峰值，baseline 板端 `infer ≈ 177.562 ms`、算法 FPS `≈ 4.876`，略快于 `172x224` baseline。
 - **168x224 addskip 结论**: 它并没有消掉 skip padding；Vela 仍保留 `skip_4x_pad` 与 `skip_8x_pad`，板端 `infer ≈ 182.055 ms`、算法 FPS `≈ 4.772`，因此不能作为 addskip 的补救分辨率。
+- **R2 Lite ASPP 结论**: bottleneck `Lite ASPP` 在 `172x224 -> 176x224` 上可完整通过 `Vela + 板端`，`SRAM peak` 仍是 `1386.00 KiB`，hotspot 仍为最终 `ResizeBilinear_1`，但 Vela `inference_time` 升到 `181.016 ms`，板端 `infer ≈ 186.851 ms`、`total ≈ 214.657 ms`，当前应视为“可行但不保留”。
+- **R2 Lite ASPP 原因归纳**: FPS 下降主要来自 bottleneck 的 dilated conv 分支，而不是尾部 hotspot `Util%` 恶化；`lite_aspp_rate4` 与 `lite_aspp_rate2` 已在 Vela 报告中体现出额外网络周期占比。
+- **R3 ECA 结论**: `ECA-style` channel attention 在 `172x224 -> 176x224` 上可完整通过 `Vela + 板端`，`SRAM peak` 仍是 `1386.00 KiB`，hotspot 仍为最终 `ResizeBilinear_1`；Vela `inference_time` 仅升到 `175.231 ms`，板端 `infer ≈ 180.035 ms`、`total ≈ 207.842 ms`，是当前最值得保留的改造候选。
+- **R3 ECA 原因归纳**: 它的额外代价主要来自低中分辨率阶段的 `MUL` 门控，而不是尾部 hotspot 恶化；整体时延增量远小于 `R1 addskip` 与 `R2 Lite ASPP`，同时 off-chip flash 只小幅增长。
+- **globalgate4x 结论**: 跨层全局向量广播在 `172x224 -> 176x224` 上可完整通过 `Vela + 板端`，`SRAM peak` 仍是 `1386.00 KiB`，hotspot 仍为最终 `ResizeBilinear_1`；Vela `inference_time ≈ 174.358 ms`，板端 `infer ≈ 179.675 ms`、`total ≈ 207.481 ms`，是当前所有改造里最接近 baseline 的版本。
+- **globalgate4x 原因归纳**: 这条路径把全局上下文压成极小向量跨层传递，主要额外代价集中在 `1/4` 分辨率的那次 `MUL`，比 `R3 ECA` 的多层门控更轻，也明显优于 `R1 addskip` 与 `R2 Lite ASPP`。
+- **globalgate2x 结论**: 把同样的全局向量广播到 decoder `1/2` 仍能守住 `1386.00 KiB` 峰值并通过板端，但 Vela `inference_time ≈ 174.782 ms`、板端 `infer ≈ 180.089 ms`，略差于 `globalgate4x`，因此不升级为最佳候选。
+- **globalgate4x_eca 结论**: 组合 `globalgate4x + ECA` 也能守住 `1386.00 KiB` 峰值并通过板端，但 `1/4` 阶段叠加双门控会拉高时延；Vela `inference_time ≈ 176.45 ms`，板端 `infer ≈ 181.198 ms`、`total ≈ 209.005 ms`，当前不保留。
 - **输入布局**: **NHWC** (Interleaved)。必须手动交错 `prev` 和 `curr` 帧。
 - **输出布局**: **NHWC** (Planar=0)。当前主线量化参数 `scale ≈ 0.407547, zp = -4`。
 - **可视化增益**: `mag * 0.05` (避免饱和)。

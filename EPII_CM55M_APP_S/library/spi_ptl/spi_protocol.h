@@ -27,6 +27,7 @@
 #define ENROLL_PEOPLE_NUM 5
 #define ENROLL_PEOPLE_NAME_LEN 15
 #define MAX_TRACKED_YOLOV8_ALGO_RES 40
+#define MAX_TRACKED_OPTICAL_FLOW_ALGO_RES MAX_TRACKED_YOLOV8_ALGO_RES
 typedef enum
 {
 	DATA_TYPE_JPG               = 0x01,
@@ -104,6 +105,7 @@ typedef enum
 	DATA_TYPE_META_FL_FR_ENROLL_DATA = 0X99, /*FACE LANDMARK and face recogntion ENROLL MODE*/
 
 	DATA_TYPE_META_YOLOV8_OB_DATA = 0X9A, /*YOLOV8 object detection*/
+	DATA_TYPE_META_OPTICAL_FLOW_DATA = DATA_TYPE_META_YOLOV8_OB_DATA, /*optical flow result / visualization metadata*/
 
 	DATA_TYPE_META_YOLOFASTEST_OB_DATA = 0X9B, /*YOLOFASTEST object detection*/
 
@@ -330,6 +332,9 @@ typedef struct
 	struct_yolov8_ob obr[MAX_TRACKED_YOLOV8_ALGO_RES];
 	uint32_t algo_tick;
 }struct_yolov8_ob_algoResult;
+
+typedef struct_yolov8_ob struct_optical_flow_target;
+typedef struct_yolov8_ob_algoResult struct_optical_flow_algoResult;
 
 
 typedef struct

@@ -140,6 +140,18 @@ int main(void)
 #endif
 
 
+#ifdef TFLM_OPTICAL_FLOW
+#include "optical_flow_app.h"
+
+/** main entry */
+int main(void)
+{
+	board_init();
+	optical_flow_app();
+	return 0;
+}
+#endif
+
 #ifdef TFLM_YOLOV8_OD
 #include "tflm_yolov8_od.h"
 
@@ -319,4 +331,3 @@ int main(void)
 	return 0;
 }
 #endif
-

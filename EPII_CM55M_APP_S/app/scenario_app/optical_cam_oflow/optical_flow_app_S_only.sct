@@ -43,7 +43,6 @@ LR_ROM1 CM55M_ROM_BASE CM55M_ROM_SIZE  {
    *(.text._Z*)
    *(.text.dw_*)
    *(.text.app*)
-   *(.text.yolov8*)
    *(.text.softmax*)
   }
 }

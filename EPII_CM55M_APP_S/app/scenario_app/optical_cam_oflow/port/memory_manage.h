@@ -15,6 +15,9 @@ extern "C" {
 int mm_set_initial(uint32_t start_addr, uint32_t mm_sz);
 uint32_t mm_reserve(uint32_t sz);
 uint32_t mm_reserve_align(uint32_t sz, uint32_t alignment_size);
+uint32_t mm_get_current_addr(void);
+uint32_t mm_get_end_addr(void);
+uint32_t mm_get_remaining(void);
 
 #ifdef __cplusplus
 }

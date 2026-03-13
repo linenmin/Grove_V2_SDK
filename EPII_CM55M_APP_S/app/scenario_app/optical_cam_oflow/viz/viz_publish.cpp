@@ -8,6 +8,7 @@
 #include "viz_uart.h"
 #include "flow_render.h"
 #include "cam_input.h"
+#include "memory_manage.h"
 #include "xprintf.h"
 #include "common_config.h"
 
@@ -23,19 +24,20 @@ constexpr uint32_t kJpegScanLen = 0x4B000U;
 constexpr uint16_t kFallbackJpegW = 64U;
 constexpr uint16_t kFallbackJpegH = 48U;
 
-constexpr int kFlowVizMaxPixels = FLOW_MODEL_IN_W * FLOW_MODEL_IN_H;
-constexpr int kFlowVizRgbBlockRows = 8;
-constexpr size_t kFlowVizRgbBlockSize = kFlowVizRgbBlockRows * FLOW_MODEL_IN_W * 3;
-constexpr size_t kFlowVizGrayJpegBufSize = 24576U;
-constexpr size_t kFlowVizRgbJpegBufSize = 49152U;
+constexpr uint32_t kFlowVizAllocAlign = 32U;
 
 } // namespace
 
-__attribute__((section(".bss.NoInit"))) uint8_t g_flow_viz_gray[kFlowVizMaxPixels] __attribute__((aligned(32)));
-__attribute__((section(".bss.NoInit"))) uint8_t g_flow_viz_jpeg[kFlowVizGrayJpegBufSize] __attribute__((aligned(32)));
-__attribute__((section(".bss.NoInit"))) uint8_t g_flow_viz_rgb_block[kFlowVizRgbBlockSize] __attribute__((aligned(32)));
-
 namespace {
+
+uint8_t *g_flow_viz_gray = nullptr;
+uint8_t *g_flow_viz_jpeg = nullptr;
+uint8_t *g_flow_viz_rgb_block = nullptr;
+size_t g_flow_viz_gray_size = 0U;
+size_t g_flow_viz_jpeg_size = 0U;
+size_t g_flow_viz_rgb_block_size = 0U;
+int g_flow_viz_w = 0;
+int g_flow_viz_h = 0;
 
 static const uint8_t kFallbackInvokeJpeg[] = {
     0xff, 0xd8, 0xff, 0xdb, 0x00, 0x43, 0x00, 0x08, 0x06, 0x06, 0x07, 0x06,
@@ -99,9 +101,73 @@ bool is_jpeg_head_tail_ok(uint32_t jpeg_addr, uint32_t jpeg_sz)
             buf[jpeg_sz - 2U] == 0xFFU && buf[jpeg_sz - 1U] == 0xD9U);
 }
 
+size_t compute_viz_jpeg_buf_size(int flow_w, int flow_h)
+{
+    const size_t pixels = (size_t)flow_w * (size_t)flow_h;
+    size_t jpeg_size = pixels / 2U;
+    if (jpeg_size < FLOW_VIZ_JPEG_BUF_MIN_BYTES) {
+        jpeg_size = FLOW_VIZ_JPEG_BUF_MIN_BYTES;
+    }
+    return jpeg_size;
+}
+
 } // namespace
 
-extern "C" void publish_viz_payload(struct_yolov8_ob_algoResult *algo,
+extern "C" int viz_publish_init(int flow_w, int flow_h)
+{
+    if (flow_w <= 0 || flow_h <= 0) {
+        xprintf("viz init invalid out dims h=%d w=%d\n", flow_h, flow_w);
+        return -1;
+    }
+
+    const size_t gray_size = (size_t)flow_w * (size_t)flow_h;
+    const size_t jpeg_size = compute_viz_jpeg_buf_size(flow_w, flow_h);
+#if FLOW_VIZ_RGB_OUTPUT
+    const size_t rgb_block_size = (size_t)FLOW_VIZ_RGB_BLOCK_ROWS * (size_t)flow_w * 3U;
+#else
+    const size_t rgb_block_size = 0U;
+#endif
+
+    const uint32_t gray_addr = mm_reserve_align((uint32_t)gray_size, kFlowVizAllocAlign);
+    if (gray_addr == 0U) {
+        xprintf("viz alloc gray fail, size=%u\n", (unsigned int)gray_size);
+        return -1;
+    }
+
+    const uint32_t jpeg_addr = mm_reserve_align((uint32_t)jpeg_size, kFlowVizAllocAlign);
+    if (jpeg_addr == 0U) {
+        xprintf("viz alloc jpeg fail, size=%u\n", (unsigned int)jpeg_size);
+        return -1;
+    }
+
+    uint32_t rgb_block_addr = 0U;
+    if (rgb_block_size > 0U) {
+        rgb_block_addr = mm_reserve_align((uint32_t)rgb_block_size, kFlowVizAllocAlign);
+        if (rgb_block_addr == 0U) {
+            xprintf("viz alloc rgb block fail, size=%u\n", (unsigned int)rgb_block_size);
+            return -1;
+        }
+    }
+
+    g_flow_viz_gray = reinterpret_cast<uint8_t *>(gray_addr);
+    g_flow_viz_jpeg = reinterpret_cast<uint8_t *>(jpeg_addr);
+    g_flow_viz_rgb_block = reinterpret_cast<uint8_t *>(rgb_block_addr);
+    g_flow_viz_gray_size = gray_size;
+    g_flow_viz_jpeg_size = jpeg_size;
+    g_flow_viz_rgb_block_size = rgb_block_size;
+    g_flow_viz_w = flow_w;
+    g_flow_viz_h = flow_h;
+
+    xprintf("[viz] out=%dx%d gray=%u jpeg=%u rgb_block=%u\n",
+            flow_w,
+            flow_h,
+            (unsigned int)gray_size,
+            (unsigned int)jpeg_size,
+            (unsigned int)rgb_block_size);
+    return 0;
+}
+
+extern "C" void publish_viz_payload(struct_optical_flow_algoResult *algo,
                                    uint32_t total_us,
                                    int loop_cnt,
                                    const int8_t *flow_data,
@@ -129,7 +195,11 @@ extern "C" void publish_viz_payload(struct_yolov8_ob_algoResult *algo,
 
 #if !defined(FORCE_VIZ_CAMERA_JPEG) || (FORCE_VIZ_CAMERA_JPEG == 0)
     if (flow_data != nullptr && flow_w > 0 && flow_h > 0 &&
-        flow_w * flow_h <= kFlowVizMaxPixels) {
+        g_flow_viz_gray != nullptr &&
+        g_flow_viz_jpeg != nullptr &&
+        flow_w <= g_flow_viz_w &&
+        flow_h <= g_flow_viz_h &&
+        (size_t)flow_w * (size_t)flow_h <= g_flow_viz_gray_size) {
         flow_render_to_gray(g_flow_viz_gray,
                           flow_data,
                           flow_w,
@@ -140,30 +210,32 @@ extern "C" void publish_viz_payload(struct_yolov8_ob_algoResult *algo,
         hx_CleanDCache_by_Addr((volatile void *)g_flow_viz_gray, (size_t)flow_w * (size_t)flow_h);
         size_t jpeg_sz = 0U;
 #if FLOW_VIZ_RGB_OUTPUT
-        jpeg_sz = flow_render_rgb_to_jpeg_block(
-                           flow_data,
-                           flow_w,
-                           flow_h,
-                           flow_stride,
-                           flow_zp,
-                           flow_scale,
-                           g_flow_viz_rgb_block,
-                           kFlowVizRgbBlockSize,
-                            g_flow_viz_jpeg,
-                            kFlowVizGrayJpegBufSize);
+        if (g_flow_viz_rgb_block != nullptr && g_flow_viz_rgb_block_size > 0U) {
+            jpeg_sz = flow_render_rgb_to_jpeg_block(
+                               flow_data,
+                               flow_w,
+                               flow_h,
+                               flow_stride,
+                               flow_zp,
+                               flow_scale,
+                               g_flow_viz_rgb_block,
+                               g_flow_viz_rgb_block_size,
+                                g_flow_viz_jpeg,
+                                g_flow_viz_jpeg_size);
+        }
         if (jpeg_sz == 0U) {
             jpeg_sz = flow_render_gray_to_jpeg(g_flow_viz_gray,
                                                 flow_w,
                                                 flow_h,
                                                 g_flow_viz_jpeg,
-                                                kFlowVizGrayJpegBufSize);
+                                                g_flow_viz_jpeg_size);
         }
 #else
         jpeg_sz = flow_render_gray_to_jpeg(g_flow_viz_gray,
                                                 flow_w,
                                                 flow_h,
                                                 g_flow_viz_jpeg,
-                                                kFlowVizGrayJpegBufSize);
+                                                g_flow_viz_jpeg_size);
 #endif
         if (jpeg_sz > 0U) {
             hx_CleanDCache_by_Addr((volatile void *)g_flow_viz_jpeg, jpeg_sz);
@@ -191,7 +263,7 @@ extern "C" void publish_viz_payload(struct_yolov8_ob_algoResult *algo,
                 if (jpg_ret == 0) {
                     algo->algo_tick = total_us;
                     hx_drv_spi_mst_protocol_write_sp(
-                        (uint32_t)algo, sizeof(struct_yolov8_ob_algoResult), DATA_TYPE_META_YOLOV8_OB_DATA);
+                        (uint32_t)algo, sizeof(struct_optical_flow_algoResult), DATA_TYPE_META_OPTICAL_FLOW_DATA);
                 }
             }
             return;
@@ -300,7 +372,7 @@ extern "C" void publish_viz_payload(struct_yolov8_ob_algoResult *algo,
             g_viz_fail_cnt++;
         } else if (algo != nullptr) {
             algo->algo_tick = total_us;
-            hx_drv_spi_mst_protocol_write_sp((uint32_t)algo, sizeof(struct_yolov8_ob_algoResult), DATA_TYPE_META_YOLOV8_OB_DATA);
+            hx_drv_spi_mst_protocol_write_sp((uint32_t)algo, sizeof(struct_optical_flow_algoResult), DATA_TYPE_META_OPTICAL_FLOW_DATA);
         }
     }
 

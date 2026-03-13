@@ -3,13 +3,15 @@
 
 #include <stdint.h>
 #include <stddef.h>
-#include "cvapp_yolov8n_ob.h"
+#include "cvapp_optical_flow.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-void publish_viz_payload(struct_yolov8_ob_algoResult *algo,
+int viz_publish_init(int flow_w, int flow_h);
+
+void publish_viz_payload(struct_optical_flow_algoResult *algo,
                         uint32_t total_us,
                         int loop_cnt,
                         const int8_t *flow_data,

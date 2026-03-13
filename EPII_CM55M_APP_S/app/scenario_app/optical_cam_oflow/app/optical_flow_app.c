@@ -6,7 +6,7 @@
 #include "board.h"
 #include "pinmux_init.h"
 #include "common_config.h"
-#include "cvapp_yolov8n_ob.h"
+#include "cvapp_optical_flow.h"
 #include "hx_drv_pmu.h"
 #include "hx_drv_spi.h"
 #include "hx_drv_scu.h"
@@ -15,7 +15,7 @@
 #include "powermode.h"
 #include "spi_master_protocol.h"
 #include "spi_eeprom_comm.h"
-#include "tflm_yolov8_od.h"
+#include "optical_flow_app.h"
 #include "xprintf.h"
 
 static void spi_m_pinmux_cfg_for_viz(void)
@@ -82,21 +82,21 @@ static void optical_cam_runtime_init(void)
 #endif
 }
 
-int tflm_yolov8_od_app(void)
+int optical_flow_app(void)
 {
-    struct_yolov8_ob_algoResult result;
+    struct_optical_flow_algoResult result;
 
     optical_cam_runtime_init();
     xprintf("Optical camera oflow app start\n");
 
-    if (cv_yolov8n_ob_init(true, true, YOLOV8_OBJECT_DETECTION_FLASH_ADDR) != 0) {
-        xprintf("cv_yolov8n_ob_init fail\n");
+    if (cv_optical_flow_init(true, true, OPTICAL_FLOW_MODEL_FLASH_ADDR) != 0) {
+        xprintf("cv_optical_flow_init fail\n");
         APP_BLOCK_FUNC();
     }
 
     while (1) {
-        if (cv_yolov8n_ob_run(&result) != 0) {
-            xprintf("cv_yolov8n_ob_run fail\n");
+        if (cv_optical_flow_run(&result) != 0) {
+            xprintf("cv_optical_flow_run fail\n");
         }
     }
 }

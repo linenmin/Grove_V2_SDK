@@ -189,11 +189,11 @@ if [[ -n "${key_log}" && -f "${key_log}" ]]; then
 fi
 
 common_cfg="${REPO_ROOT}/EPII_CM55M_APP_S/app/scenario_app/optical_cam_oflow/config/common_config.h"
-cvapp_cpp="${REPO_ROOT}/EPII_CM55M_APP_S/app/scenario_app/optical_cam_oflow/pipeline/cvapp_yolov8n_ob.cpp"
+cvapp_cpp="${REPO_ROOT}/EPII_CM55M_APP_S/app/scenario_app/optical_cam_oflow/pipeline/cvapp_optical_flow.cpp"
 flow_render_cpp="${REPO_ROOT}/EPII_CM55M_APP_S/app/scenario_app/optical_cam_oflow/viz/flow_render.cpp"
 cam_input_cpp="${REPO_ROOT}/EPII_CM55M_APP_S/app/scenario_app/optical_cam_oflow/io/camera/cam_input.cpp"
 
-flash_addr="$(extract_define "${common_cfg}" "YOLOV8_OBJECT_DETECTION_FLASH_ADDR")"
+flash_addr="$(extract_define "${common_cfg}" "OPTICAL_FLOW_MODEL_FLASH_ADDR")"
 tensor_arena_size="$(extract_assignment "${cvapp_cpp}" "tensor_arena_size")"
 flow_dbg_freeze_pair="$(extract_define "${cvapp_cpp}" "FLOW_DBG_FREEZE_PAIR")"
 flow_dbg_synth_inject="$(extract_define "${cvapp_cpp}" "FLOW_DBG_SYNTH_INJECT")"
@@ -239,7 +239,7 @@ cat > "${MD_OUTPUT}" <<EOF_MD
 ## Source Knobs
 
 - tensor_arena_size: ${tensor_arena_size}
-- YOLOV8_OBJECT_DETECTION_FLASH_ADDR: ${flash_addr}
+- OPTICAL_FLOW_MODEL_FLASH_ADDR: ${flash_addr}
 - FLOW_DBG_FREEZE_PAIR: ${flow_dbg_freeze_pair}
 - FLOW_DBG_SYNTH_INJECT: ${flow_dbg_synth_inject}
 - FLOW_DBG_SYNTH_CURR_CONST: ${flow_dbg_synth_curr_const}
@@ -293,7 +293,7 @@ if [[ -n "${JSON_OUTPUT}" ]]; then
   },
   "source_knobs": {
     "tensor_arena_size": "$(json_escape "${tensor_arena_size}")",
-    "YOLOV8_OBJECT_DETECTION_FLASH_ADDR": "$(json_escape "${flash_addr}")",
+    "OPTICAL_FLOW_MODEL_FLASH_ADDR": "$(json_escape "${flash_addr}")",
     "FLOW_DBG_FREEZE_PAIR": "$(json_escape "${flow_dbg_freeze_pair}")",
     "FLOW_DBG_SYNTH_INJECT": "$(json_escape "${flow_dbg_synth_inject}")",
     "FLOW_DBG_SYNTH_CURR_CONST": "$(json_escape "${flow_dbg_synth_curr_const}")",

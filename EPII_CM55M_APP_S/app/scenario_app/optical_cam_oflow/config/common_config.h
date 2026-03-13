@@ -24,19 +24,28 @@
 
 
 //0x3AB7B000 //(2220032 bytes => 0x21E000, set to 0x21E000)
-#define YOLOV8_OBJECT_DETECTION_FLASH_ADDR 0x3AB7B000
+#define OPTICAL_FLOW_MODEL_FLASH_ADDR 0x3AB7B000
 
 // --- Optical Flow Firmware Common Configuration ---
 
 // Centralized Model Parameters
 // Modify these when changing the Vela exported model
-#define FLOW_MODEL_IN_W 192
-#define FLOW_MODEL_IN_H 144
+#define FLOW_MODEL_IN_W 208
+#define FLOW_MODEL_IN_H 160
 #define FLOW_MODEL_CHANNELS 6
 
-// Tensor Arena Size
-// D8/D16: Minimum 1432KB for 150x200 or 144x192 models.
-#define FLOW_TENSOR_ARENA_KB 1432
+// Tensor Arena Budget
+// Arena is now allocated dynamically from the remaining SRAM budget after
+// sensor buffers and prev/curr frame buffers are reserved. Keep a small
+// alignment/safety margin instead of hard-coding a fixed arena size.
+#define FLOW_TENSOR_ARENA_SAFETY_BYTES 32
+
+// Visualization Budget
+// Visualization is a required part of this optical-flow app. Buffers are now
+// allocated dynamically from the runtime SRAM budget using the model output
+// size, before the tensor arena is reserved.
+#define FLOW_VIZ_JPEG_BUF_MIN_BYTES 24576U
+#define FLOW_VIZ_RGB_BLOCK_ROWS 8U
 
 // Visualization Mode
 // 1 = Color HSV (Hue=direction, Value=magnitude)

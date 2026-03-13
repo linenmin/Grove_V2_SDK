@@ -37,17 +37,16 @@
 
 ### 模型
 
-- 从固定 Flash 地址加载：`YOLOV8_OBJECT_DETECTION_FLASH_ADDR`
+- 从固定 Flash 地址加载：`OPTICAL_FLOW_MODEL_FLASH_ADDR`
 - 默认用于“模型不变，快速迭代 app 代码”场景
 
 ### 内存（当前实测结论）
 
-- `tensor_arena_size` 当前设置：`1670 * 1024`
-- 大跨度验证结果：
-  - `1700 * 1024`：失败（`alloc raw buffer fail`）
-  - `1800 * 1024`：失败（`alloc raw buffer fail`）
+- `tensor_arena_size` 当前主线设置：`1432 * 1024`
+- 当前 `144x192` 基线已验证可工作。
+- 更大 arena 的历史尝试保留在归档计划中，不再作为当前主线建议。
 
-说明：当前瓶颈是“模型 arena 与非模型运行内存（双帧 buffer 等）”的总内存平衡，而不是仅看 `AllocateTensors`。
+说明：当前瓶颈仍然是“模型 arena 与非模型运行内存（双帧 buffer 等）”的总内存平衡，而不是仅看 `AllocateTensors`。
 
 ---
 
@@ -99,10 +98,10 @@ python3 xmodem/serReadLoop.py \
 ```text
 optical_cam_oflow/
   app/
-    tflm_yolov8_od.c              # app 入口与生命周期
+    optical_flow_app.c              # app 入口与生命周期
   pipeline/
-    cvapp_yolov8n_ob.cpp          # 推理主流程（init/run）
-    cvapp_yolov8n_ob.h
+    cvapp_optical_flow.cpp          # 推理主流程（init/run）
+    cvapp_optical_flow.h
   io/
     camera/
       cam_input.cpp               # 摄像头双帧采集与格式转换
@@ -122,9 +121,9 @@ optical_cam_oflow/
     memory_manage.h
     ffconf.h
     hardfault_handler.c
-  tflm_yolov8_od.mk
-  TFLM_yolov8_od_S_only.ld
-  TFLM_yolov8_od_S_only.sct
+  optical_flow_app.mk
+  optical_flow_app_S_only.ld
+  optical_flow_app_S_only.sct
   README.md
 ```
 
@@ -133,4 +132,3 @@ M1 关键点：
 1. `cam_input_init()` 完成 sensor/datapath 启动  
 2. `cam_input_get_frame_pair()` 每轮输出连续双帧  
 3. pipeline 主流程无需关心摄像头底层细节
-

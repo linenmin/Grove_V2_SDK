@@ -49,3 +49,21 @@ uint32_t mm_reserve_align(uint32_t sz, uint32_t alignment_size)
 	}
 
 }
+
+uint32_t mm_get_current_addr(void)
+{
+	return g_addr;
+}
+
+uint32_t mm_get_end_addr(void)
+{
+	return end_addr;
+}
+
+uint32_t mm_get_remaining(void)
+{
+	if (g_addr >= end_addr) {
+		return 0;
+	}
+	return end_addr - g_addr;
+}

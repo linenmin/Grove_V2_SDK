@@ -47,6 +47,14 @@ Phase 5
 - [x] `R1` 结果写入 `findings.md` 与 `progress.md`
 - [x] `R2` bottleneck Lite ASPP
 - [x] `R3` ECA channel attention
+- [x] `R4` compressed `/2` skip add
+- [x] `R5` shared dual global gate `/4 + /2`
+- [x] `R6` `globalgate4x + bottleneck-only ECA`
+- [x] `R7` `globalgate4x_bneckeca + compressed skip 4x`
+- [x] `R8` `globalgate4x_bneckeca + compressed skip 2x` (`Vela-only`)
+- [x] `R9` `globalgate4x_bneckeca + compressed skip 8x` (`Vela-only`)
+- [x] `R10` `globalgate4x_bneckeca + skip8x + skip4x` (`Vela-only`)
+- [x] `R11` `globalgate4x_bneckeca + skip8x + skip4x + skip2x` (`Vela-only`)
 - **Status:** in_progress
 
 ### Phase 6: Comparative Decision Log
@@ -79,6 +87,14 @@ Phase 5
 | `globalgate4x` 升级为当前最佳候选 | 它利用跨层全局向量广播实现高层语义调制，在保持 `SRAM peak` 不变的同时，比 `R3 ECA` 更轻 |
 | `globalgate2x` 不升级为最佳候选 | 它证明更高尺度门控仍然安全，但 `1/2` 门控的 `MUL` 明显更重，板端略差于 `globalgate4x` |
 | `globalgate4x_eca` 标记为“组合可行但不保留” | 它保持 `SRAM peak` 不变，但在 `1/4` 阶段叠加双门控后，板端时延已明显劣化 |
+| `compressedskip2xadd` 标记为“可行且继续保留观察” | 它是第一个真正推到高尺度 `/2` 的 skip 版本，仍未触碰峰值，虽然比 `globalgate4x` 慢，但仍在当前可接受范围内 |
+| `shareddualgate4x2x` 标记为“可行且结构干净，但不是新的最佳点” | 共享 `MEAN` 的思路成立，但真实成本仍主要来自 `/4` 与 `/2` 两次 `MUL`，整体落在 `globalgate4x` 与更重方案之间 |
+| `globalgate4x_bneckeca` 标记为“新的第二优候选” | 它只在 bottleneck 加极轻 `ECA`，没有把额外代价推进到 `/2`，因此比更重的叠加/skip 方案更稳 |
+| `globalgate4x_bneckeca_skip4x` 标记为“验证有效，但当前不进入训练优先候选” | 它证明继续加尺度仍不触碰峰值，但在当前实现下时延上升已经明显，收益方向不够优 |
+| `globalgate4x_bneckeca_skip8x` 标记为“可继续保留观察” | 它是在当前基座上增加单个 skip 时最划算的尺度，明显优于 `skip4x` 和 `skip2x` |
+| `globalgate4x_bneckeca_skip2x` 标记为“当前不保留” | 它的高尺度代价最重，在当前基座上已经明显不划算 |
+| `globalgate4x_bneckeca_skip8x4x` 标记为“多尺度训练候选” | 它是当前最接近轻量 U-Net 的多尺度版本，同时保留 `/8` 和 `/4`，且还没有像 `/2` 那样把代价拉爆 |
+| `globalgate4x_bneckeca_skip8x4x2x` 标记为“上限探索版，不进训练优先列表” | 它验证了三层长跳跃同时存在仍不碰峰值，但 `/2` 把总体代价拉高得太明显 |
 
 ## Errors Encountered
 
@@ -92,6 +108,12 @@ Phase 5
 | 跨层全局 gate 需要验证是否真的优于层内 `ECA` | 1 | 已完成 `globalgate4x` 验证，确认它在 `Vela` 和板端都略优于 `R3 ECA` |
 | `globalgate2x` 需要确认更高尺度门控是否仍符合当前 `FPS` 约束 | 1 | 已完成验证，确认峰值不变，但 `1/2` `MUL` 成本偏高 |
 | `globalgate4x_eca` 需要确认层内门控与跨层门控能否安全叠加 | 1 | 已完成验证，确认不会抬高峰值，但不值得保留 |
+| `compressedskip2xadd` 需要确认高尺度 `/2` skip 是否会带来不可接受的 `SRAM/FPS` 代价 | 1 | 已完成验证，确认峰值仍不变，板端时延增量在当前阈值内 |
+| `shareddualgate4x2x` 需要确认共享全局摘要是否比堆叠门控更高效 | 1 | 已完成验证，确认共享 `MEAN` 轻，但双层 `MUL` 仍带来可见代价 |
+| `globalgate4x_bneckeca` 需要确认 bottleneck-only `ECA` 是否值得保留 | 1 | 已完成验证，确认它仍守住峰值，且代价只比 `globalgate4x` 略高 |
+| `globalgate4x_bneckeca_skip4x` 需要确认按当前最稳主线继续加 `/4` skip 是否仍值得训练 | 1 | 已完成验证，确认能跑通且不碰峰值，但速度代价已经不划算 |
+| `globalgate4x_bneckeca_skip2x` / `skip8x` 需要确认是不是比 `/4` 更值得做 | 1 | 已完成 `Vela-only` 对比，确认 `skip8x` 更优、`skip2x` 更差 |
+| 真正的多尺度长跳跃 (`1/8 + 1/4 + 1/2`) 是否值得做训练候选 | 1 | 已完成 `skip8x4x` 与 `skip8x4x2x` 对比，确认 `/8 + /4` 可保留，`+ /2` 不保留 |
 
 ## Notes
 
@@ -131,6 +153,30 @@ Phase 5
   [172x224](/home/enmin/Seeed_Grove_Vision_AI_Module_V2/tools/model_export/optical_flow_144x192/output_bilinear_globalgate4x_eca/172x224)
 - `globalgate4x_eca` 上板日志：
   [pipeline_with-model_optical_cam_oflow_20260313_194450.log](/home/enmin/Seeed_Grove_Vision_AI_Module_V2/logs/pipeline/pipeline_with-model_optical_cam_oflow_20260313_194450.log)
+- `compressedskip2xadd` 结果目录：
+  [172x224](/home/enmin/Seeed_Grove_Vision_AI_Module_V2/tools/model_export/optical_flow_144x192/output_bilinear_compressedskip2xadd/172x224)
+- `compressedskip2xadd` 上板日志：
+  [pipeline_with-model_optical_cam_oflow_20260313_212019.log](/home/enmin/Seeed_Grove_Vision_AI_Module_V2/logs/pipeline/pipeline_with-model_optical_cam_oflow_20260313_212019.log)
+- `shareddualgate4x2x` 结果目录：
+  [172x224](/home/enmin/Seeed_Grove_Vision_AI_Module_V2/tools/model_export/optical_flow_144x192/output_bilinear_shareddualgate4x2x/172x224)
+- `shareddualgate4x2x` 上板日志：
+  [pipeline_with-model_optical_cam_oflow_20260313_212810.log](/home/enmin/Seeed_Grove_Vision_AI_Module_V2/logs/pipeline/pipeline_with-model_optical_cam_oflow_20260313_212810.log)
+- `globalgate4x_bneckeca` 结果目录：
+  [172x224](/home/enmin/Seeed_Grove_Vision_AI_Module_V2/tools/model_export/optical_flow_144x192/output_bilinear_globalgate4x_bneckeca/172x224)
+- `globalgate4x_bneckeca` 上板日志：
+  [pipeline_with-model_optical_cam_oflow_20260313_213812.log](/home/enmin/Seeed_Grove_Vision_AI_Module_V2/logs/pipeline/pipeline_with-model_optical_cam_oflow_20260313_213812.log)
+- `globalgate4x_bneckeca_skip4x` 结果目录：
+  [172x224](/home/enmin/Seeed_Grove_Vision_AI_Module_V2/tools/model_export/optical_flow_144x192/output_bilinear_globalgate4x_bneckeca_skip4x/172x224)
+- `globalgate4x_bneckeca_skip4x` 上板日志：
+  [pipeline_with-model_optical_cam_oflow_20260313_221625.log](/home/enmin/Seeed_Grove_Vision_AI_Module_V2/logs/pipeline/pipeline_with-model_optical_cam_oflow_20260313_221625.log)
+- `globalgate4x_bneckeca_skip2x` 结果目录：
+  [172x224](/home/enmin/Seeed_Grove_Vision_AI_Module_V2/tools/model_export/optical_flow_144x192/output_bilinear_globalgate4x_bneckeca_skip2x/172x224)
+- `globalgate4x_bneckeca_skip8x` 结果目录：
+  [172x224](/home/enmin/Seeed_Grove_Vision_AI_Module_V2/tools/model_export/optical_flow_144x192/output_bilinear_globalgate4x_bneckeca_skip8x/172x224)
+- `globalgate4x_bneckeca_skip8x4x` 结果目录：
+  [172x224](/home/enmin/Seeed_Grove_Vision_AI_Module_V2/tools/model_export/optical_flow_144x192/output_bilinear_globalgate4x_bneckeca_skip8x4x/172x224)
+- `globalgate4x_bneckeca_skip8x4x2x` 结果目录：
+  [172x224](/home/enmin/Seeed_Grove_Vision_AI_Module_V2/tools/model_export/optical_flow_144x192/output_bilinear_globalgate4x_bneckeca_skip8x4x2x/172x224)
 - 若改动涉及导出逻辑，回看
   [MODEL_EXPORT.md](/home/enmin/Seeed_Grove_Vision_AI_Module_V2/docs/MODEL_EXPORT.md)
 - 每轮实验必须先写 Vela 侧结论，再写板端结论

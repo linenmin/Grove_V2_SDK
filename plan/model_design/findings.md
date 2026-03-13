@@ -87,6 +87,66 @@
 - `globalgate4x_eca` 板端可正常启动，日志中 `initial done` 与 `INVOKE` 全命中，`model io` 仍保持 `172x224 -> 176x224`。
 - `globalgate4x_eca` 板端 `infer ≈ 181.198 ms`，`total ≈ 209.005 ms`，劣于 `globalgate4x`、`globalgate2x` 和 `R3 ECA`。
 - 组合实验的结论是：当前 `1/4` 阶段已经不适合继续叠加多个门控；若后续还想继续加表达力，应优先避免在同一高活跃阶段再叠 `MUL`。
+- 新增高尺度 skip 实验 `compressedskip2xadd`：从 encoder `/2` 取高分辨率特征，在 decoder `/2` 阶段做 `1x1 squeeze -> BN/ReLU -> 1x1 expand -> BN -> add` 融合。
+- `compressedskip2xadd` 首次导出就暴露了真实几何约束：encoder `/2` 是 `86x112`，decoder `/2` 是 `88x112`，所以必须像前面的 skip 实验一样加入静态 `PAD` 对齐。
+- `compressedskip2xadd` 的 Vela `SRAM peak` 仍为 `1419264 B = 1386.00 KiB`，peak hotspot 仍是最终 `ResizeBilinear_1`，说明即使把 skip 推到 `/2`，当前峰值仍未被打破。
+- `compressedskip2xadd` 的主要额外代价集中在 `/2` skip 分支本身：`skip_2x_squeeze`、`skip_2x_expand`、`skip_2x_pad` 和 `skip_2x_add` 都明显出现在 Vela 报告中，其中 `skip_2x_add` 单层 `Network% ≈ 1.33`。
+- `compressedskip2xadd` 的 Vela 预估推理时间是 `177.745 ms`；比 baseline 慢约 `2.65%`，比 `globalgate4x` 慢，但仍明显低于此前用户给出的 `20%` 容忍线。
+- `compressedskip2xadd` 板端可正常启动，`model io` 仍为 `in(h=172,w=224,c=6) out(h=176,w=224,c=2)`，`INVOKE resolution` 仍为 `[224, 176]`，arena 仍保留 `32 B` 余量。
+- `compressedskip2xadd` 板端 `infer ≈ 184.194 ms`，`total ≈ 211.992 ms`；同样慢于 `globalgate4x`，但仍在当前可接受区间内。
+- 这轮实验说明：高尺度 `/2` skip 的确更“像精度向”的结构，但它带来的代价也比单纯 global gate 更直接、更集中；在现阶段，它应被标记为“可行且值得继续保留观察”，但还不是新的效率最优解。
+- 新增联动门控实验 `shareddualgate4x2x`：从 bottleneck 只做一次共享 `MEAN` 得到全局上下文向量，再分别投影成 `/4` 与 `/2` 两层的门控信号。
+- `shareddualgate4x2x` 的 Vela `SRAM peak` 仍为 `1419264 B = 1386.00 KiB`，peak hotspot 仍是最终 `ResizeBilinear_1`，说明双层门控仍未突破当前峰值边界。
+- `shareddualgate4x2x` 验证了用户提出的“共享全局摘要”判断：共享 `MEAN` 本身确实极轻，`shared_dual_gate_mean` 对应 `MEAN` 只有约 `0.08%` `Network%`，真实代价仍主要落在 `/4` 与 `/2` 的两次 `MUL`。
+- 两次门控中，`shared_dual_gate_4x_scale` 的 feature map 约 `157696 B`、单层 `Network% ≈ 0.34`；`shared_dual_gate_2x_scale` 约 `315392 B`、单层 `Network% ≈ 0.67`，和此前 `globalgate2x` 的观察一致：高尺度 `/2` 门控依旧是更重的那一半。
+- `shareddualgate4x2x` 的 Vela 预估推理时间是 `175.714 ms`，比 `globalgate4x` 的 `174.358 ms` 更慢，但仍明显轻于 `globalgate4x_eca` 的 `176.45 ms` 与 `compressedskip2xadd` 的 `177.745 ms`。
+- `shareddualgate4x2x` 的 off-chip flash 占用是 `2814.078 KiB`，略高于 `globalgate4x`，但仍低于 `R3 ECA` 和 `globalgate4x_eca`。
+- `shareddualgate4x2x` 板端可正常启动，`model io` 仍为 `in(h=172,w=224,c=6) out(h=176,w=224,c=2)`，`arena_budget=1419872`，`remaining_after_arena=32`，与前几轮一致。
+- 这次板端日志只有 7 次有效 loop 样本，但数值非常稳定：`infer ≈ 181.065 ms`，`total ≈ 208.870 ms`，`infer` 抖动仅约 `0.002 ms`。
+- 相比单层版本，`shareddualgate4x2x` 明显比 `globalgate4x` 更慢，也略慢于 `globalgate2x`；但它仍优于 `globalgate4x_eca` 和 `compressedskip2xadd`，因此当前应标记为“可行且结构干净的中间候选”，不是新的最佳效率点。
+- 新增轻量叠加实验 `globalgate4x_bneckeca`：只在 bottleneck 加一个 `ECA`，然后保留 `globalgate4x` 的 decoder `/4` 跨层门控，不再在 `/8` 或 `/4` 叠额外层内 attention。
+- `globalgate4x_bneckeca` 的 Vela `SRAM peak` 仍为 `1419264 B = 1386.00 KiB`，peak hotspot 仍是最终 `ResizeBilinear_1`，说明“bottleneck-only ECA + /4 global gate”仍完全守住当前峰值边界。
+- 这轮验证了预期判断：bottleneck `ECA` 本身非常轻，`eca_bottleneck_scale` 约 `39424 B` 生命周期、单层 `Network% ≈ 0.08`；模型新增的主要高分辨率代价仍然是原来的 `global_gate_4x_scale`，不是新加的 bottleneck 注意力。
+- `globalgate4x_bneckeca` 的 Vela 预估推理时间是 `174.657 ms`，只比 `globalgate4x` 的 `174.358 ms` 高约 `0.30 ms`，明显轻于 `R3 ECA`、`shareddualgate4x2x`、`globalgate4x_eca` 和 `compressedskip2xadd`。
+- `globalgate4x_bneckeca` 的 off-chip flash 占用是 `2813.938 KiB`，和 `shareddualgate4x2x` 接近，但仍显著低于 `globalgate4x_eca`。
+- `globalgate4x_bneckeca` 板端可正常启动，`model io` 仍为 `in(h=172,w=224,c=6) out(h=176,w=224,c=2)`，`arena_budget=1419872`，`remaining_after_arena=32`，没有引入新的运行时内存问题。
+- 板端日志共提取到 9 次有效 loop 样本，数值几乎不抖：`infer ≈ 179.884 ms`，`total ≈ 207.673 ms`，`infer` 抖动约 `0.001 ms`。
+- 相比 baseline 的 `178.513 / 206.3 ms`，`globalgate4x_bneckeca` 只带来很小的时延增量；相比 `globalgate4x` 的 `179.675 / 207.481 ms`，它略慢，但差距很小。
+- 当前结论是：`globalgate4x_bneckeca` 成为新的“第二优候选”。如果你更偏向稳妥增加一点表达力，而不想把代价推进到 `/2` 或在 `/4` 叠多重门控，这一版比 `shareddualgate4x2x`、`globalgate4x_eca`、`compressedskip2xadd` 都更合理。
+- 按“在当前最稳基座上继续升级”的思路，新增 `globalgate4x_bneckeca_skip4x`：在 `globalgate4x_bneckeca` 基础上，再给 decoder `/4` 增加一个压通道 `skip4x add`。
+- `globalgate4x_bneckeca_skip4x` 的 Vela `SRAM peak` 仍为 `1419264 B = 1386.00 KiB`，peak hotspot 仍是最终 `ResizeBilinear_1`；这说明即使开始叠加更像 U-Net 的 `/4` skip，当前真实峰值仍没有被打到。
+- 这轮 `/4` skip 的新代价已经非常具体：`skip_4x_squeeze`、`skip_4x_expand`、`skip_4x_pad`、`skip_4x_add` 全部进入了 Vela 报告，其中 `skip_4x_add` 单层 `Network% ≈ 0.67`，与 `global_gate_4x_scale` 同量级。
+- `/4` skip 仍然遇到之前就见过的几何问题：encoder `/4` 与 decoder `/4` 需要一行静态 `PAD` 对齐，所以这条路径不是“纯净无对齐代价”的 skip。
+- `globalgate4x_bneckeca_skip4x` 的 Vela 预估推理时间是 `177.196 ms`，比 `globalgate4x_bneckeca` 的 `174.657 ms` 明显更慢，也高于 `shareddualgate4x2x` 的 `175.714 ms`。
+- `globalgate4x_bneckeca_skip4x` 的 off-chip flash 占用是 `2823.984 KiB`，已经接近 `R3 ECA` 一档。
+- `globalgate4x_bneckeca_skip4x` 板端可正常启动，`model io` 仍为 `in(h=172,w=224,c=6) out(h=176,w=224,c=2)`，`arena_budget=1419872`，`remaining_after_arena=32`，没有触发新的运行时内存错误。
+- 板端日志共提取到 8 次有效 loop 样本，数值稳定：`infer ≈ 182.451 ms`，`total ≈ 210.249 ms`。
+- 相比 `globalgate4x_bneckeca` 的 `179.884 / 207.673 ms`，这轮 `/4` skip 升级带来了约 `+2.567 ms infer` 和约 `+2.576 ms total`；相比 `globalgate4x`，差距已经更明显。
+- 当前结论是：`globalgate4x_bneckeca_skip4x` 证明了“继续加尺度”依然不会立刻撞到峰值，但在当前实现方式下，它不是好的轻量训练候选；排序上它落后于 `globalgate4x`、`globalgate4x_bneckeca`、`R3 ECA`、`shareddualgate4x2x`。
+- 用户已明确同意当前阶段改为 `Vela-only` 快速筛选，不再要求每个新想法都上板；板端和 `Vela` 当前可先按“稳定多约 5 ms”处理，最后只对 shortlist 上板复验。
+- 按这个新口径，已补做同一基座上的另外两个尺度：`globalgate4x_bneckeca_skip2x` 和 `globalgate4x_bneckeca_skip8x`。
+- `globalgate4x_bneckeca_skip2x` 的 Vela `SRAM peak` 仍为 `1419264 B = 1386.00 KiB`，peak hotspot 仍是最终 `ResizeBilinear_1`，说明把 skip 推到 `/2` 也依然没有击穿当前峰值边界。
+- 但 `globalgate4x_bneckeca_skip2x` 的代价明显更重：Vela `inference_time ≈ 179.253 ms`，已经劣于 `skip4x`、`skip8x` 和所有当前主力候选。
+- `skip2x` 的详细代价和此前单独 `compressedskip2xadd` 的规律一致：`skip_2x_squeeze / expand / pad / add` 都很重，其中 `skip_2x_add` 单层 `Network% ≈ 1.32`，是当前这些 skip 里最昂贵的一档。
+- `globalgate4x_bneckeca_skip8x` 的 Vela `SRAM peak` 同样仍为 `1419264 B = 1386.00 KiB`，peak hotspot 仍是最终 `ResizeBilinear_1`。
+- `globalgate4x_bneckeca_skip8x` 的 Vela `inference_time ≈ 175.778 ms`，明显好于 `skip4x` 的 `177.196 ms` 和 `skip2x` 的 `179.253 ms`；在只看 `Vela` 的口径下，它是目前“多一个 skip”的最佳尺度。
+- `skip8x` 的代价主要集中在中低分辨率 `skip_8x_squeeze / expand / add`，其中 `skip_8x_add` 单层 `Network% ≈ 0.34`，和 `global_gate_4x_scale` 基本同量级；它没有出现 `/4`、`/2` 那种明显放大的高尺度代价。
+- 这轮多尺度对比的结论已经很清楚：在 `globalgate4x_bneckeca` 这个基座上，增量性价比排序是 `skip8x > skip4x > skip2x`。
+- 如果目标是从当前主线里再挑少数可训练候选，那么 `skip8x` 值得保留观察；`skip4x` 和 `skip2x` 目前都不值得进入训练优先列表。
+- 按用户要求，已进一步验证真正“同时存在多个尺度长跳跃”的版本，而不只是单尺度增量。
+- `globalgate4x_bneckeca_skip8x4x` 代表一个更轻的 U-Net-like 多尺度版本：同时保留 `/8` 与 `/4` skip，并保留 `bottleneck ECA + /4 global gate`。
+- `globalgate4x_bneckeca_skip8x4x` 的 Vela `SRAM peak` 仍为 `1419264 B = 1386.00 KiB`，peak hotspot 仍是最终 `ResizeBilinear_1`；说明即使 `/8 + /4` 长跳跃同时存在，当前总峰值仍没有被打破。
+- `globalgate4x_bneckeca_skip8x4x` 的 Vela `inference_time ≈ 178.319 ms`，明显高于单独 `skip8x` 的 `175.778 ms`，也高于单独 `skip4x` 的 `177.196 ms`，但仍明显好于包含 `/2` 的全量版。
+- 这版的成本主要来自三处并存：`skip_8x_add`、`global_gate_4x_scale`、`skip_4x_add`。其中 `skip_8x_add` 单层 `Network% ≈ 0.33`，`global_gate_4x_scale ≈ 0.33`，`skip_4x_add ≈ 0.66`。
+- `globalgate4x_bneckeca_skip8x4x2x` 代表更完整的 U-Net-like 多尺度版本：`/8 + /4 + /2` 三层长跳跃同时存在。
+- `globalgate4x_bneckeca_skip8x4x2x` 的 Vela `SRAM peak` 仍为 `1419264 B = 1386.00 KiB`，peak hotspot 仍是最终 `ResizeBilinear_1`；即使三层 skip 同时存在，也依然没有越过当前尾部峰值。
+- 但 `globalgate4x_bneckeca_skip8x4x2x` 的 Vela `inference_time ≈ 182.915 ms`，已经明显高于 `skip8x4x` 的 `178.319 ms`。主要拖累来自 `/2`：`skip_2x_add` 单层 `Network% ≈ 1.29`，是整个多尺度联合版里最贵的单点。
+- 这轮“真正多尺度同时存在”的结论已经非常明确：在当前基座和实现方式下，`/2` 是联合版里最不划算的那一级；`/8 + /4` 可以保留为多尺度训练候选，但 `+ /2` 后代价上升已经过于明显。
+- 当前如果只想挑少数值得训练的版本，我会把多尺度 shortlist 收缩成：
+  - `globalgate4x`
+  - `globalgate4x_bneckeca`
+  - `globalgate4x_bneckeca_skip8x`
+  - `globalgate4x_bneckeca_skip8x4x`
 
 ## Technical Decisions
 
@@ -152,6 +212,30 @@
   `/home/enmin/Seeed_Grove_Vision_AI_Module_V2/tools/model_export/optical_flow_144x192/output_bilinear_globalgate4x_eca/172x224`
 - `globalgate4x_eca` board log:
   `/home/enmin/Seeed_Grove_Vision_AI_Module_V2/logs/pipeline/pipeline_with-model_optical_cam_oflow_20260313_194450.log`
+- `compressedskip2xadd` Vela dir:
+  `/home/enmin/Seeed_Grove_Vision_AI_Module_V2/tools/model_export/optical_flow_144x192/output_bilinear_compressedskip2xadd/172x224`
+- `compressedskip2xadd` board log:
+  `/home/enmin/Seeed_Grove_Vision_AI_Module_V2/logs/pipeline/pipeline_with-model_optical_cam_oflow_20260313_212019.log`
+- `shareddualgate4x2x` Vela dir:
+  `/home/enmin/Seeed_Grove_Vision_AI_Module_V2/tools/model_export/optical_flow_144x192/output_bilinear_shareddualgate4x2x/172x224`
+- `shareddualgate4x2x` board log:
+  `/home/enmin/Seeed_Grove_Vision_AI_Module_V2/logs/pipeline/pipeline_with-model_optical_cam_oflow_20260313_212810.log`
+- `globalgate4x_bneckeca` Vela dir:
+  `/home/enmin/Seeed_Grove_Vision_AI_Module_V2/tools/model_export/optical_flow_144x192/output_bilinear_globalgate4x_bneckeca/172x224`
+- `globalgate4x_bneckeca` board log:
+  `/home/enmin/Seeed_Grove_Vision_AI_Module_V2/logs/pipeline/pipeline_with-model_optical_cam_oflow_20260313_213812.log`
+- `globalgate4x_bneckeca_skip4x` Vela dir:
+  `/home/enmin/Seeed_Grove_Vision_AI_Module_V2/tools/model_export/optical_flow_144x192/output_bilinear_globalgate4x_bneckeca_skip4x/172x224`
+- `globalgate4x_bneckeca_skip4x` board log:
+  `/home/enmin/Seeed_Grove_Vision_AI_Module_V2/logs/pipeline/pipeline_with-model_optical_cam_oflow_20260313_221625.log`
+- `globalgate4x_bneckeca_skip2x` Vela dir:
+  `/home/enmin/Seeed_Grove_Vision_AI_Module_V2/tools/model_export/optical_flow_144x192/output_bilinear_globalgate4x_bneckeca_skip2x/172x224`
+- `globalgate4x_bneckeca_skip8x` Vela dir:
+  `/home/enmin/Seeed_Grove_Vision_AI_Module_V2/tools/model_export/optical_flow_144x192/output_bilinear_globalgate4x_bneckeca_skip8x/172x224`
+- `globalgate4x_bneckeca_skip8x4x` Vela dir:
+  `/home/enmin/Seeed_Grove_Vision_AI_Module_V2/tools/model_export/optical_flow_144x192/output_bilinear_globalgate4x_bneckeca_skip8x4x/172x224`
+- `globalgate4x_bneckeca_skip8x4x2x` Vela dir:
+  `/home/enmin/Seeed_Grove_Vision_AI_Module_V2/tools/model_export/optical_flow_144x192/output_bilinear_globalgate4x_bneckeca_skip8x4x2x/172x224`
 - supported ops copy:
   `/home/enmin/Seeed_Grove_Vision_AI_Module_V2/tools/model_export/optical_flow_144x192/vela/SUPPORTED_OPS.md`
 

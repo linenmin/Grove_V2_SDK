@@ -39,6 +39,12 @@
 - **globalgate4x 原因归纳**: 这条路径把全局上下文压成极小向量跨层传递，主要额外代价集中在 `1/4` 分辨率的那次 `MUL`，比 `R3 ECA` 的多层门控更轻，也明显优于 `R1 addskip` 与 `R2 Lite ASPP`。
 - **globalgate2x 结论**: 把同样的全局向量广播到 decoder `1/2` 仍能守住 `1386.00 KiB` 峰值并通过板端，但 Vela `inference_time ≈ 174.782 ms`、板端 `infer ≈ 180.089 ms`，略差于 `globalgate4x`，因此不升级为最佳候选。
 - **globalgate4x_eca 结论**: 组合 `globalgate4x + ECA` 也能守住 `1386.00 KiB` 峰值并通过板端，但 `1/4` 阶段叠加双门控会拉高时延；Vela `inference_time ≈ 176.45 ms`，板端 `infer ≈ 181.198 ms`、`total ≈ 209.005 ms`，当前不保留。
+- **compressedskip2xadd 结论**: 把高尺度 skip 真正推到 decoder `1/2` 后，模型仍能守住 `1386.00 KiB` 峰值并通过板端；Vela `inference_time ≈ 177.745 ms`，板端 `infer ≈ 184.194 ms`、`total ≈ 211.992 ms`。它比 `globalgate4x` 更慢，但在当前阈值内，是值得继续观察的“精度向”候选。
+- **shareddualgate4x2x 结论**: 共享 bottleneck 全局摘要并同时门控 decoder `1/4` 与 `1/2` 后，模型仍能守住 `1386.00 KiB` 峰值并通过板端；Vela `inference_time ≈ 175.714 ms`，板端 `infer ≈ 181.065 ms`、`total ≈ 208.870 ms`。它验证了“共享 `MEAN` 很轻”的判断，但真实成本仍主要来自两次高分辨率 `MUL`，因此表现介于 `globalgate4x` 与更重方案之间。
+- **globalgate4x_bneckeca 结论**: 只在 bottleneck 增加一个 `ECA`，同时保留 decoder `1/4` 的 global gate 后，模型仍能守住 `1386.00 KiB` 峰值并通过板端；Vela `inference_time ≈ 174.657 ms`，板端 `infer ≈ 179.884 ms`、`total ≈ 207.673 ms`。它只比 `globalgate4x` 略慢，但明显优于把注意力推进到更高尺度或叠多重门控的版本，当前应视为新的第二优候选。
+- **globalgate4x_bneckeca_skip4x 结论**: 在 `globalgate4x_bneckeca` 基础上再叠一个压通道 `/4` skip 后，模型仍能守住 `1386.00 KiB` 峰值并通过板端；Vela `inference_time ≈ 177.196 ms`，板端 `infer ≈ 182.451 ms`、`total ≈ 210.249 ms`。这说明继续加尺度仍不会立刻碰峰值，但当前 `/4 skip` 的代价已经明显，不适合作为新的轻量训练优先候选。
+- **globalgate4x_bneckeca_skip2x / skip8x 结论**: 在同一基座上继续做 `Vela-only` 快速筛选后，`skip2x` 仍守住 `1386.00 KiB` 峰值，但 `inference_time ≈ 179.253 ms`，是当前最差的一档；`skip8x` 也守住 `1386.00 KiB` 峰值，且 `inference_time ≈ 175.778 ms`，明显优于 `skip4x` 与 `skip2x`。当前增量性价比排序是 `skip8x > skip4x > skip2x`。
+- **globalgate4x_bneckeca_skip8x4x / skip8x4x2x 结论**: 真正多尺度长跳跃同时存在时，`skip8x4x` 仍守住 `1386.00 KiB` 峰值，`inference_time ≈ 178.319 ms`，可视为当前最像轻量 U-Net 的多尺度候选；而 `skip8x4x2x` 同样不碰峰值，但 `inference_time ≈ 182.915 ms`，说明 `/2` 在联合版里仍是最不划算的一层。当前如果要挑多尺度训练候选，应优先保留 `skip8x4x`，不保留 `skip8x4x2x`。
 - **输入布局**: **NHWC** (Interleaved)。必须手动交错 `prev` 和 `curr` 帧。
 - **输出布局**: **NHWC** (Planar=0)。当前主线量化参数 `scale ≈ 0.407547, zp = -4`。
 - **可视化增益**: `mag * 0.05` (避免饱和)。
@@ -75,6 +81,11 @@
 - 当前 bilinear file-based 计划区：`plan/optical-flow-bilinear-sram-fps-pi-20260313/README.md`
 - 当前模型设计计划区：`plan/model_design/README.md`
 - 当前 `R1 addskip` 结果：`plan/model_design/findings.md`
+- 当前 `shareddualgate4x2x` 结果：`plan/model_design/findings.md`
+- 当前 `globalgate4x_bneckeca` 结果：`plan/model_design/findings.md`
+- 当前 `globalgate4x_bneckeca_skip4x` 结果：`plan/model_design/findings.md`
+- 当前 `globalgate4x_bneckeca_skip2x / skip8x` 结果：`plan/model_design/findings.md`
+- 当前 `globalgate4x_bneckeca_skip8x4x / skip8x4x2x` 结果：`plan/model_design/findings.md`
 - 历史计划归档索引：`plan/archive/optical-flow-debug-2026Q1/README.md`
 - 最近技术背景：`plan/archive/optical-flow-debug-2026Q1/plan-016-memory-latency-cleanup.md`
 - 硬件事实查询：`docs/KNOWLEDGE_BASE.md` (Plan 中提取的精华)

@@ -36,10 +36,18 @@ MODEL_CONFIG = {
 VARIANT_TO_MODULE = {
     "baseline": "network.MultiScaleResNet_bilinear",
     "addskip": "network.MultiScaleResNet_bilinear_addskip",
+    "compressedskip2xadd": "network.MultiScaleResNet_bilinear_compressedskip2xadd",
     "eca": "network.MultiScaleResNet_bilinear_eca",
     "globalgate2x": "network.MultiScaleResNet_bilinear_globalgate2x",
     "globalgate4x": "network.MultiScaleResNet_bilinear_globalgate4x",
+    "globalgate4x_bneckeca": "network.MultiScaleResNet_bilinear_globalgate4x_bneckeca",
+    "globalgate4x_bneckeca_skip4x": "network.MultiScaleResNet_bilinear_globalgate4x_bneckeca_skip4x",
+    "globalgate4x_bneckeca_skip2x": "network.MultiScaleResNet_bilinear_globalgate4x_bneckeca_skip2x",
+    "globalgate4x_bneckeca_skip8x": "network.MultiScaleResNet_bilinear_globalgate4x_bneckeca_skip8x",
+    "globalgate4x_bneckeca_skip8x4x": "network.MultiScaleResNet_bilinear_globalgate4x_bneckeca_skip8x4x",
+    "globalgate4x_bneckeca_skip8x4x2x": "network.MultiScaleResNet_bilinear_globalgate4x_bneckeca_skip8x4x2x",
     "globalgate4x_eca": "network.MultiScaleResNet_bilinear_globalgate4x_eca",
+    "shareddualgate4x2x": "network.MultiScaleResNet_bilinear_shareddualgate4x2x",
     "liteaspp": "network.MultiScaleResNet_bilinear_liteaspp",
 }
 

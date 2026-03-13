@@ -147,6 +147,15 @@
   - `globalgate4x_bneckeca`
   - `globalgate4x_bneckeca_skip8x`
   - `globalgate4x_bneckeca_skip8x4x`
+- 已对 fixed-arch joint training 的三个候选模型做结构级 `Vela` 预检，输入分辨率固定为和前面部署一致的 `172x224`，输出仍为 `176x224`。
+- 这轮 `Vela` 预检使用的是 fixed subnet `0,2,1,1,0,0,0,0,0` 的随机初始化权重，只用于判断结构带来的 `SRAM peak` 与 `inference_time/FPS`，不代表训练后的精度。
+- fixed-arch `baseline` 的 `Vela` 结果是：`SRAM peak = 1386.00 KiB`，`inference_time ≈ 166.179 ms`，`FPS ≈ 6.018`。
+- fixed-arch `globalgate4x_bneckeca` 的 `Vela` 结果是：`SRAM peak = 1386.00 KiB`，`inference_time ≈ 167.551 ms`，`FPS ≈ 5.968`。
+- fixed-arch `globalgate4x_bneckeca_skip8x4x2x` 的 `Vela` 结果是：`SRAM peak = 1386.00 KiB`，`inference_time ≈ 175.810 ms`，`FPS ≈ 5.688`。
+- 这三个 fixed-arch 候选在 `172x224` 上都没有突破当前 `1386.00 KiB` 的峰值上限，说明训练 shortlist 与此前 bilinear 结构实验在部署侧约束上是对齐的。
+- 三个 fixed-arch 候选的 `Vela` hotspot 仍都落在最终 `ResizeBilinear_1`，没有因为 `global gate` 或三尺度 skip 把峰值前移。
+- `globalgate4x_bneckeca` 相比 fixed-arch `baseline` 只慢约 `0.83%`，代价非常小，仍适合作为稳妥消融项。
+- `globalgate4x_bneckeca_skip8x4x2x` 相比 fixed-arch `baseline` 慢约 `5.80%`，仍明显低于用户当前“20% 内都可考虑”的阈值，因此它完全可以作为“先看 accuracy 上限”的训练主力版本。
 
 ## Technical Decisions
 
@@ -236,6 +245,14 @@
   `/home/enmin/Seeed_Grove_Vision_AI_Module_V2/tools/model_export/optical_flow_144x192/output_bilinear_globalgate4x_bneckeca_skip8x4x/172x224`
 - `globalgate4x_bneckeca_skip8x4x2x` Vela dir:
   `/home/enmin/Seeed_Grove_Vision_AI_Module_V2/tools/model_export/optical_flow_144x192/output_bilinear_globalgate4x_bneckeca_skip8x4x2x/172x224`
+- fixed-arch three-model Vela summary:
+  `/home/enmin/MCUFlowNet/EdgeFlowNAS/outputs/fixed_arch_vela_compare/172x224/summary.json`
+- fixed-arch baseline Vela dir:
+  `/home/enmin/MCUFlowNet/EdgeFlowNAS/outputs/fixed_arch_vela_compare/172x224/baseline/vela`
+- fixed-arch `globalgate4x_bneckeca` Vela dir:
+  `/home/enmin/MCUFlowNet/EdgeFlowNAS/outputs/fixed_arch_vela_compare/172x224/globalgate4x_bneckeca/vela`
+- fixed-arch `globalgate4x_bneckeca_skip8x4x2x` Vela dir:
+  `/home/enmin/MCUFlowNet/EdgeFlowNAS/outputs/fixed_arch_vela_compare/172x224/globalgate4x_bneckeca_skip8x4x2x/vela`
 - supported ops copy:
   `/home/enmin/Seeed_Grove_Vision_AI_Module_V2/tools/model_export/optical_flow_144x192/vela/SUPPORTED_OPS.md`
 

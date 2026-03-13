@@ -6,7 +6,7 @@
 
 ## Current Phase
 
-Phase 5
+Phase 7
 
 ## Phases
 
@@ -59,10 +59,20 @@ Phase 5
 
 ### Phase 6: Comparative Decision Log
 
-- [ ] 按轮次整理保留/放弃/待复验的想法
-- [ ] 标出当前最佳 `SRAM peak` / `FPS` 候选
-- [ ] 准备下一轮实验输入
-- **Status:** pending
+- [x] 按轮次整理保留/放弃/待复验的想法
+- [x] 标出当前最佳 `SRAM peak` / `FPS` 候选
+- [x] 根据用户放宽的时延阈值更新训练 shortlist
+- [ ] 把 shortlist 接入训练/导出入口
+- **Status:** in_progress
+
+### Phase 7: Fixed-Arch Training Candidate Precheck
+
+- [x] 固定训练骨架 `0,2,1,1,0,0,0,0,0`
+- [x] 为 `baseline` / `globalgate4x_bneckeca` / `globalgate4x_bneckeca_skip8x4x2x` 做结构级 `Vela` 预检
+- [x] 输入分辨率对齐到已部署验证过的 `172x224`
+- [x] 确认三模型的 `SRAM peak` 与 `inference_time/FPS`
+- [ ] 根据这轮 `Vela` 结果锁定 first-round HPC 训练组合
+- **Status:** in_progress
 
 ## Key Questions
 
@@ -95,6 +105,9 @@ Phase 5
 | `globalgate4x_bneckeca_skip2x` 标记为“当前不保留” | 它的高尺度代价最重，在当前基座上已经明显不划算 |
 | `globalgate4x_bneckeca_skip8x4x` 标记为“多尺度训练候选” | 它是当前最接近轻量 U-Net 的多尺度版本，同时保留 `/8` 和 `/4`，且还没有像 `/2` 那样把代价拉爆 |
 | `globalgate4x_bneckeca_skip8x4x2x` 标记为“上限探索版，不进训练优先列表” | 它验证了三层长跳跃同时存在仍不碰峰值，但 `/2` 把总体代价拉高得太明显 |
+| 用户将可接受时延阈值放宽到“小于 20% 即可考虑”后，`globalgate4x_bneckeca_skip8x4x2x` 升级为扩展训练候选 | 该版本的 `182.915 ms` 仍明显落在用户当前可接受区间内，适合保留为多尺度上限参照 |
+| fixed-arch 训练前的 `Vela` 预检统一使用 `172x224` | 必须和前面真实部署验证的输入口径一致，避免训练后再发现部署侧几何/峰值不对齐 |
+| fixed-arch first-round 训练仍保留三模型 joint training | `baseline` 给干净参照，`globalgate4x_bneckeca` 给轻量消融，`globalgate4x_bneckeca_skip8x4x2x` 负责先看 accuracy 上限 |
 
 ## Errors Encountered
 

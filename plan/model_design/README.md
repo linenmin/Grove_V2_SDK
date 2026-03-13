@@ -19,6 +19,8 @@
 - [findings.md](/home/enmin/Seeed_Grove_Vision_AI_Module_V2/plan/model_design/findings.md)
 - [progress.md](/home/enmin/Seeed_Grove_Vision_AI_Module_V2/plan/model_design/progress.md)
 - [idea-feasibility-and-order.md](/home/enmin/Seeed_Grove_Vision_AI_Module_V2/plan/model_design/idea-feasibility-and-order.md)
+- [training-shortlist.md](/home/enmin/Seeed_Grove_Vision_AI_Module_V2/plan/model_design/training-shortlist.md)
+- [fixed-arch-training-plan-20260314.md](/home/enmin/Seeed_Grove_Vision_AI_Module_V2/plan/model_design/fixed-arch-training-plan-20260314.md)
 
 ## Related Context
 

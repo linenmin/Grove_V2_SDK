@@ -208,6 +208,20 @@
 | globalgate4x_bneckeca_skip8x Vela | `run_sram_test_bilinear.py --height 172 --width 224 --optimise Size --variant globalgate4x_bneckeca_skip8x` | 只用 `Vela` 快速判断在当前基座上补 `/8` skip 是否划算 | 峰值仍为 `1386.00 KiB`，hotspot 仍为 `ResizeBilinear_1`，`inference_time ≈ 175.778 ms` | pass |
 | globalgate4x_bneckeca_skip8x4x Vela | `run_sram_test_bilinear.py --height 172 --width 224 --optimise Size --variant globalgate4x_bneckeca_skip8x4x` | 验证真正 `/8 + /4` 多尺度长跳跃同时存在时是否仍值得训练 | 峰值仍为 `1386.00 KiB`，hotspot 仍为 `ResizeBilinear_1`，`inference_time ≈ 178.319 ms` | pass |
 | globalgate4x_bneckeca_skip8x4x2x Vela | `run_sram_test_bilinear.py --height 172 --width 224 --optimise Size --variant globalgate4x_bneckeca_skip8x4x2x` | 验证真正 `/8 + /4 + /2` 多尺度长跳跃同时存在时是否仍值得训练 | 峰值仍为 `1386.00 KiB`，hotspot 仍为 `ResizeBilinear_1`，`inference_time ≈ 182.915 ms` | pass |
+| fixed-arch baseline Vela | `FixedArchModel(arch=0,2,1,1,0,0,0,0,0, variant=baseline)` + `172x224` + `from_session -> INT8 TFLite -> Vela(Size)` | 训练基线在最终训练输入分辨率上仍满足部署侧约束 | 输出 `176x224`；`SRAM peak = 1386.00 KiB`；`inference_time ≈ 166.179 ms`；`FPS ≈ 6.018` | pass |
+| fixed-arch `globalgate4x_bneckeca` Vela | `FixedArchModel(arch=0,2,1,1,0,0,0,0,0, variant=globalgate4x_bneckeca)` + `172x224` + `from_session -> INT8 TFLite -> Vela(Size)` | 轻量消融版在最终训练输入分辨率上仍满足部署侧约束 | 输出 `176x224`；`SRAM peak = 1386.00 KiB`；`inference_time ≈ 167.551 ms`；`FPS ≈ 5.968` | pass |
+| fixed-arch `globalgate4x_bneckeca_skip8x4x2x` Vela | `FixedArchModel(arch=0,2,1,1,0,0,0,0,0, variant=globalgate4x_bneckeca_skip8x4x2x)` + `172x224` + `from_session -> INT8 TFLite -> Vela(Size)` | 三尺度训练主力版在最终训练输入分辨率上仍满足部署侧约束 | 输出 `176x224`；`SRAM peak = 1386.00 KiB`；`inference_time ≈ 175.810 ms`；`FPS ≈ 5.688` | pass |
+
+## Fixed-Arch Vela Precheck
+
+- 在 `MCUFlowNet/EdgeFlowNAS` 中对 joint training 的三个候选做了结构级 `Vela` 预检，而不是等训练结束后再看部署约束。
+- 输入分辨率固定为和前面实际部署保持一致的 `172x224`，因此输出仍是 `176x224`，和 bilinear 板端验证口径一致。
+- 导出路径改成 `tf.compat.v1.lite.TFLiteConverter.from_session`，因为第一次走 `SavedModel` 会把 BN 的 train/infer 双分支带进 TFLite，出现 `OptionalFromValue / FusedBatchNormV3` 非 native op。
+- 多尺度输出累加也改成了原始 `AccumPreds` 的逐级 `2x resize + add`；如果直接把 `/4` 结果一次 resize 到 full，会触发 Vela 对非 2x `ResizeBilinear` 路径的不支持。
+- 三个 fixed-arch 候选在 `172x224` 上都仍然卡在同一个 `SRAM peak = 1386.00 KiB`，热点还是最终 `ResizeBilinear_1`。
+- 这说明当前 joint training 的三模型设计和前面 bilinear 结构实验的部署结论是一致的：真正需要关注的是时延差异，而不是峰值被新结构打穿。
+- fixed-arch `globalgate4x_bneckeca` 相比 fixed-arch baseline 只慢约 `0.83%`，完全可以作为 joint training 的轻量消融项。
+- fixed-arch `globalgate4x_bneckeca_skip8x4x2x` 相比 fixed-arch baseline 慢约 `5.80%`，仍远低于用户当前可接受的 `20%` 时延阈值，因此可直接进入 first-round 上限训练。
 
 ## Error Log
 
@@ -230,13 +244,15 @@
 | 2026-03-13 | `globalgate4x_bneckeca_skip4x` 需要确认在当前最稳基座上继续补 `/4` skip 是否还能作为训练候选保留 | 1 | 已验证；它仍不碰峰值，但 `/4` skip 的 `ADD/PAD/Conv` 代价已经足够明显，当前不升级为训练优先候选 |
 | 2026-03-13 | 用户指出既然还没碰峰值，就该继续看 `1/2` 与 `1/8` | 1 | 已按 `Vela-only` 快速筛选补做；结果显示 `skip8x` 明显优于 `skip4x` 和 `skip2x` |
 | 2026-03-13 | 用户进一步要求验证真正同时存在 `1/2 + 1/4 + 1/8` 的多尺度长跳跃 | 1 | 已完成 `skip8x4x` 与 `skip8x4x2x` 对比；结果显示三层同时存在仍不碰峰值，但 `/2` 会把总时延明显拉高 |
+| 2026-03-14 | fixed-arch 三模型第一次 `SavedModel -> TFLite` 导出把 BN train/infer 双分支一起带进图，出现 `OptionalFromValue / FusedBatchNormV3` | 1 | 改为 `from_session` 直接冻结 `input -> final_output` inference graph |
+| 2026-03-14 | fixed-arch 三模型第一次直接把 `/4` 预测 resize 到 full 再累加，触发 Vela 对非 2x `ResizeBilinear` 路径不支持 | 1 | 改回原始 `AccumPreds`：逐级 `2x resize + add` |
 
 ## 5-Question Reboot Check
 
 | Question | Answer |
 |----------|--------|
-| Where am I? | Phase 5: `R1 addskip`、`168x224` 分辨率复验、`R2 Lite ASPP`、`R3 ECA`、`globalgate2x`、`globalgate4x`、`globalgate4x_eca`、`compressedskip2xadd`、`shareddualgate4x2x`、`globalgate4x_bneckeca`、`globalgate4x_bneckeca_skip4x` 都已完成，并额外补做了 `skip2x` / `skip8x` 和真正多尺度 `skip8x4x` / `skip8x4x2x` 的 `Vela-only` 对比 |
-| Where am I going? | 从当前结果里收缩出最少量、但最值得训练的多尺度候选，而不是继续扩展所有可运行结构 |
-| What's the goal? | 找到在不明显恶化 `SRAM peak` 与 `FPS` 的前提下更值得保留的改造 |
-| What have I learned? | `globalgate4x` 仍是效率最优点，`globalgate4x_bneckeca` 是新的第二优点；真正多尺度同时存在时，`/8 + /4` 仍可接受，但把 `/2` 也加进来后收益明显变差 |
-| What have I done? | 已完成 `R1 addskip`、`168x224` 复验、`R2 Lite ASPP`、`R3 ECA`、`globalgate2x`、`globalgate4x`、`globalgate4x_eca`、`compressedskip2xadd`、`shareddualgate4x2x`、`globalgate4x_bneckeca`、`globalgate4x_bneckeca_skip4x` 的导出、Vela 分析、上板验证，并额外完成 `skip2x` / `skip8x` 及 `skip8x4x` / `skip8x4x2x` 的 `Vela-only` 对比 |
+| Where am I? | bilinear 结构筛选已基本收敛，并且刚完成 fixed-arch 三模型在最终训练输入 `172x224` 下的结构级 `Vela` 预检 |
+| Where am I going? | 进入 HPC 联合训练前，先确认 baseline / 轻量消融 / 三尺度 full 版都满足当前部署侧约束 |
+| What's the goal? | 用最少训练成本先看到 accuracy 上限，同时不把部署侧 `SRAM peak + FPS` 风险留到训练后才发现 |
+| What have I learned? | fixed-arch 三模型在 `172x224` 下的 `SRAM peak` 仍全部锁在 `1386.00 KiB`；三尺度 full 版只比 fixed-arch baseline 慢约 `5.80%` |
+| What have I done? | 已完成 bilinear 结构筛选，并额外完成 fixed-arch `baseline` / `globalgate4x_bneckeca` / `globalgate4x_bneckeca_skip8x4x2x` 的 `172x224` INT8 TFLite 导出与 Vela 预检 |

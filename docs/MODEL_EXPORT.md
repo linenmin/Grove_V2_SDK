@@ -25,6 +25,8 @@ bash /home/enmin/Seeed_Grove_Vision_AI_Module_V2/scripts/export_optical_flow_144
 
 - [optical_flow_157x203_vela.tflite](/home/enmin/Seeed_Grove_Vision_AI_Module_V2/model_zoo/optical_flow/157x203/optical_flow_157x203_vela.tflite)
 
+当前默认导出变体是 `mainline`。如果要导出 bilinear shortlist，需要显式设置 `OPTICAL_FLOW_EXPORT_VARIANT` 或传 `--variant`。
+
 ## 2. 当前默认依赖
 
 - Python: `/home/enmin/miniconda3/envs/vela/bin/python`
@@ -75,6 +77,20 @@ bash /home/enmin/Seeed_Grove_Vision_AI_Module_V2/scripts/export_optical_flow_144
   /home/enmin/Seeed_Grove_Vision_AI_Module_V2/tools/model_export/optical_flow_144x192/run_export.py \
   --skip-publish
 ```
+
+如果你要导出某个 bilinear shortlist 变体：
+
+```bash
+OPTICAL_FLOW_EXPORT_VARIANT=globalgate4x_bneckeca_skip8x4x \
+OPTICAL_FLOW_CHECKPOINT_PREFIX=/path/to/that_variant/best.ckpt \
+bash /home/enmin/Seeed_Grove_Vision_AI_Module_V2/scripts/export_optical_flow_144x192.sh --skip-publish
+```
+
+注意：
+
+- `mainline` 继续沿用 `model_zoo/optical_flow/<HxW>/` 发布路径
+- bilinear 变体默认发布到 `model_zoo/optical_flow/bilinear/<variant>/<HxW>/`
+- bilinear 变体不能复用主线 checkpoint；checkpoint 必须和结构完全匹配
 
 如果你要手动指定分辨率和发布路径：
 

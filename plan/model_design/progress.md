@@ -70,11 +70,18 @@
   - 发现 `172x224` 的 `/4` skip 存在 `43x56 -> 44x56` 的奇数尺寸错位
   - 用 skip 分支 `PAD` 补齐一行，避免引入非整数 resize
   - 完成 `R1 addskip` 的 `Vela -> 板端` 全流程验证
+  - 按用户新假设补做 `168x224` baseline 与 `168x224 addskip` 的 `Vela -> 板端` 对照
+  - 确认 `168x224` 仍不能消掉 `skip_4x_pad` / `skip_8x_pad`
+  - 确认 `168x224` baseline 略快于 `172x224` baseline，但 `168x224 addskip` 仍然慢于 baseline
 - Files created/modified:
   - `tools/model_export/optical_flow_144x192/network/MultiScaleResNet_bilinear_addskip.py`
   - `tools/model_export/optical_flow_144x192/run_sram_test_bilinear.py`
   - `tools/model_export/optical_flow_144x192/output_bilinear_addskip/172x224/*`
+  - `tools/model_export/optical_flow_144x192/output_bilinear/168x224/*`
+  - `tools/model_export/optical_flow_144x192/output_bilinear_addskip/168x224/*`
   - `logs/pipeline/pipeline_with-model_optical_cam_oflow_20260313_181740.log`
+  - `logs/pipeline/pipeline_with-model_optical_cam_oflow_20260313_182747.log`
+  - `logs/pipeline/pipeline_with-model_optical_cam_oflow_20260313_183003.log`
   - `logs/flow_frames/latest/frame_001.png`
   - `logs/flow_frames/latest/frame_002.png`
   - `logs/flow_frames/latest/frame_003.png`
@@ -90,6 +97,10 @@
 | Supported ops copy | `cp SUPPORTED_OPS.md .../vela/` | 文档进入仓库导出目录 | 完成 | pass |
 | R1 addskip Vela | `run_sram_test_bilinear.py --height 172 --width 224 --optimise Size --variant addskip` | 不显著抬高 peak | 峰值仍为 `1386.00 KiB`，hotspot 仍为 `ResizeBilinear_1` | pass |
 | R1 addskip board | `run_optical_pipeline.sh --mode with-model --skip-build --model-arg '...optical_flow_bilinear_addskip_172x224_vela.tflite 0xB7B000 0x00000'` | 可启动并输出 `224x176` flow | `initial done` / `INVOKE` 全命中；`infer ≈ 182.055 ms` | pass |
+| 168x224 baseline Vela | `run_sram_test_bilinear.py --height 168 --width 224 --optimise Size --variant baseline` | 保持与现有 baseline 同量级 peak | 峰值仍为 `1386.00 KiB`，hotspot 仍为 `ResizeBilinear_1` | pass |
+| 168x224 addskip Vela | `run_sram_test_bilinear.py --height 168 --width 224 --optimise Size --variant addskip` | 验证是否可消掉 pad | 峰值仍为 `1386.00 KiB`，且仍有 `skip_4x_pad` / `skip_8x_pad` | pass |
+| 168x224 baseline board | `run_optical_pipeline.sh --mode with-model --skip-build --model-arg '...optical_flow_bilinear_168x224_vela.tflite 0xB7B000 0x00000'` | 可启动并输出 `224x176` flow | `initial done` / `INVOKE` 全命中；`infer ≈ 177.562 ms`，`FPS ≈ 4.876` | pass |
+| 168x224 addskip board | `run_optical_pipeline.sh --mode with-model --skip-build --model-arg '...optical_flow_bilinear_addskip_168x224_vela.tflite 0xB7B000 0x00000'` | 若 pad 消失则希望至少不慢于 baseline | 可启动，但 `infer ≈ 182.055 ms`，`FPS ≈ 4.772` | pass |
 
 ## Error Log
 
@@ -99,13 +110,14 @@
 | 2026-03-13 | `.agent/skills` 是符号链接，不是独立目录 | 1 | 改复制到 `.cursor/skills` |
 | 2026-03-13 | 用户给的 `MCUFlowNet/EdgeFlowNet/SUPPORTED_OPS.md` 相对路径在仓库内不存在 | 1 | 改为读取并列目录 `/home/enmin/MCUFlowNet/EdgeFlowNet/SUPPORTED_OPS.md` |
 | 2026-03-13 | `R1 addskip` 导出时报 `skip_4x_add` 维度不匹配：`43x56` vs `44x56` | 1 | 在 `/4` skip 分支增加 `1-row PAD` 对齐静态 shape |
+| 2026-03-13 | 用户猜测 `168x224` 可能消掉 skip padding | 1 | 已证伪；Vela 仍保留 `skip_4x_pad` 与 `skip_8x_pad` |
 
 ## 5-Question Reboot Check
 
 | Question | Answer |
 |----------|--------|
-| Where am I? | Phase 5: `R1 addskip` 已完成，准备进入下一轮结构实验 |
-| Where am I going? | 优先做 `Lite ASPP`，或者接收用户新的结构点子 |
+| Where am I? | Phase 5: `R1 addskip` 与 `168x224` 分辨率假设验证都已完成 |
+| Where am I going? | 继续推进 `Lite ASPP`，或先固定是否把 `168x224` 作为新 baseline 候选 |
 | What's the goal? | 找到在不明显恶化 `SRAM peak` 与 `FPS` 的前提下更值得保留的改造 |
-| What have I learned? | `additive skip` 在当前 bilinear 几何下可做，但不会改善 hotspot，且会带来约 `2%` infer 变慢 |
-| What have I done? | 已完成 `addskip` 的导出、Vela 分析、上板验证与 Discord 通知 |
+| What have I learned? | `168x224` 虽保持 `4:3`，但并不能消掉 addskip padding；`additive skip` 依旧不改善 hotspot，且会带来约 `2%` infer 变慢 |
+| What have I done? | 已完成 `172x224` 与 `168x224` 两组 `addskip` 导出、Vela 分析、上板验证，并已发送 Discord 通知 |

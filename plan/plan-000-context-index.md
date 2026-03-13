@@ -29,6 +29,8 @@
 - **bilinear 上机失败对照**: `172x228` 的 Vela 峰值升到 `1485.00 KiB`，板端 `AllocateTensors()` 请求 `1520720 B`，与 Vela 峰值仅差 `80 B` 级别。
 - **R1 addskip 结论**: two-stage additive skip 在 `172x224 -> 176x224` 上可完整通过 `Vela + 板端`，但 `SRAM peak` 仍为 `1386.00 KiB`，板端 `infer` 从 `178.513 ms` 变为 `182.055 ms`，算法 FPS 从 `4.846` 降到 `4.765`。
 - **R1 addskip 原因归纳**: 变慢主要来自新增 `CONV + PAD + ADD`，不是主 hotspot `ResizeBilinear_1` 的 `Util%` 恶化；该 hotspot 仍约 `6.08%`。
+- **168x224 分辨率复验**: `168x224 -> 176x224` 仍保持 `1386.00 KiB` Vela 峰值，baseline 板端 `infer ≈ 177.562 ms`、算法 FPS `≈ 4.876`，略快于 `172x224` baseline。
+- **168x224 addskip 结论**: 它并没有消掉 skip padding；Vela 仍保留 `skip_4x_pad` 与 `skip_8x_pad`，板端 `infer ≈ 182.055 ms`、算法 FPS `≈ 4.772`，因此不能作为 addskip 的补救分辨率。
 - **输入布局**: **NHWC** (Interleaved)。必须手动交错 `prev` 和 `curr` 帧。
 - **输出布局**: **NHWC** (Planar=0)。当前主线量化参数 `scale ≈ 0.407547, zp = -4`。
 - **可视化增益**: `mag * 0.05` (避免饱和)。

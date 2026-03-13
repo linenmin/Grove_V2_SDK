@@ -36,6 +36,14 @@
 - `R1 addskip` 板端 `infer ≈ 182.055 ms`，`total ≈ 209.877 ms`，算法 FPS 约 `4.765`。
 - 相比 baseline 的 `infer ≈ 178.513 ms` / `FPS ≈ 4.846`，`R1 addskip` 在不改善 `SRAM peak` 的前提下带来约 `+1.98%` infer 变慢与约 `-1.67%` FPS 下降。
 - 当前更合理的解释是：变慢来自新增 `CONV + PAD + ADD` 开销，而不是 Vela 主 hotspot `ResizeBilinear_1` 的 `Util%` 恶化；该 hotspot 的 `Util%` 仍约 `6.08%`，与 baseline 基本一致。
+- 用户提出的 `168x224` 输入分辨率假设已完成验证，目标是看它是否能在保持 `4:3` 宽高比的同时消掉 addskip 的 `PAD`。
+- `168x224` baseline 的 Vela `SRAM peak` 仍为 `1419264 B = 1386.00 KiB`，热点仍是 decoder 尾段 `ResizeBilinear_1`。
+- `168x224` addskip 的 Vela `SRAM peak` 也仍为 `1419264 B = 1386.00 KiB`，没有比 `172x224` 更低。
+- `168x224` addskip 的 `detailed_performance.txt` 仍出现 `skip_4x_pad` 与 `skip_8x_pad`，说明该分辨率并没有消掉 skip 对齐 padding。
+- `168x224` baseline 板端可正常启动，`model io` 为 `in(h=168,w=224,c=6) out(h=176,w=224,c=2)`，`infer ≈ 177.562 ms`，算法 FPS 约 `4.876`。
+- `168x224` addskip 板端也可正常启动，但 `infer ≈ 182.055 ms`，算法 FPS 约 `4.772`。
+- 相比 `168x224` baseline，`168x224` addskip 仍然更慢，且没有带来 `SRAM peak` 改善，因此不能作为“通过改分辨率挽救 addskip”的有效路径。
+- `168x224` baseline 相比 `172x224` baseline 略快，说明它可以保留为一个可继续复验的 baseline 分辨率候选，但当前不改变 `R1 addskip` 的结论。
 
 ## Technical Decisions
 
@@ -73,6 +81,14 @@
   `/home/enmin/Seeed_Grove_Vision_AI_Module_V2/tools/model_export/optical_flow_144x192/output_bilinear_addskip/172x224`
 - `R1 addskip` board log:
   `/home/enmin/Seeed_Grove_Vision_AI_Module_V2/logs/pipeline/pipeline_with-model_optical_cam_oflow_20260313_181740.log`
+- `168x224` baseline Vela dir:
+  `/home/enmin/Seeed_Grove_Vision_AI_Module_V2/tools/model_export/optical_flow_144x192/output_bilinear/168x224`
+- `168x224` addskip Vela dir:
+  `/home/enmin/Seeed_Grove_Vision_AI_Module_V2/tools/model_export/optical_flow_144x192/output_bilinear_addskip/168x224`
+- `168x224` baseline board log:
+  `/home/enmin/Seeed_Grove_Vision_AI_Module_V2/logs/pipeline/pipeline_with-model_optical_cam_oflow_20260313_182747.log`
+- `168x224` addskip board log:
+  `/home/enmin/Seeed_Grove_Vision_AI_Module_V2/logs/pipeline/pipeline_with-model_optical_cam_oflow_20260313_183003.log`
 - supported ops copy:
   `/home/enmin/Seeed_Grove_Vision_AI_Module_V2/tools/model_export/optical_flow_144x192/vela/SUPPORTED_OPS.md`
 

@@ -73,6 +73,7 @@ Phase 5
 | 支持算子文档放到 `tools/model_export/optical_flow_144x192/vela/` | 这是最直接服务模型导出和结构设计判断的位置 |
 | 第一轮 idea 顺序定为 `additive skip -> Lite ASPP -> ECA` | 在表达力提升与 SRAM 风险之间最平衡 |
 | `R1 addskip` 不直接推进为当前最佳候选 | 虽然 SRAM peak 持平，但板端 infer/FPS 小幅变差，暂不符合当前优先级 |
+| `168x224` 先作为 baseline 候选，不作为 addskip 挽救方案 | 它保持 `4:3` 且 baseline 略快，但仍不能消掉 addskip padding，也没有改善 addskip 的 SRAM/FPS |
 
 ## Errors Encountered
 
@@ -80,6 +81,7 @@ Phase 5
 |-------|---------|------------|
 | `pi-planning-with-files` 不在当前可用 skill 列表中 | 1 | 按用户要求先把 skill 复制到 `~/.codex/skills` 与仓库 `.cursor/skills`，再读取 `SKILL.md` |
 | `R1 addskip` 在 `172x224` 上出现 `/4` skip shape mismatch | 1 | 在 skip 分支加 `PAD` 解决，避免改动主干上采样几何 |
+| 用户希望 `168x224` 通过几何对齐消掉 addskip 的 `PAD` | 1 | 已完成 `168x224 baseline/addskip` 验证，确认 Vela 仍保留 `skip_4x_pad` 与 `skip_8x_pad` |
 
 ## Notes
 
@@ -91,6 +93,14 @@ Phase 5
   [output_bilinear_addskip/172x224](/home/enmin/Seeed_Grove_Vision_AI_Module_V2/tools/model_export/optical_flow_144x192/output_bilinear_addskip/172x224)
 - `R1 addskip` 上板日志：
   [pipeline_with-model_optical_cam_oflow_20260313_181740.log](/home/enmin/Seeed_Grove_Vision_AI_Module_V2/logs/pipeline/pipeline_with-model_optical_cam_oflow_20260313_181740.log)
+- `168x224` baseline 结果目录：
+  [168x224](/home/enmin/Seeed_Grove_Vision_AI_Module_V2/tools/model_export/optical_flow_144x192/output_bilinear/168x224)
+- `168x224` addskip 结果目录：
+  [168x224](/home/enmin/Seeed_Grove_Vision_AI_Module_V2/tools/model_export/optical_flow_144x192/output_bilinear_addskip/168x224)
+- `168x224` baseline 上板日志：
+  [pipeline_with-model_optical_cam_oflow_20260313_182747.log](/home/enmin/Seeed_Grove_Vision_AI_Module_V2/logs/pipeline/pipeline_with-model_optical_cam_oflow_20260313_182747.log)
+- `168x224` addskip 上板日志：
+  [pipeline_with-model_optical_cam_oflow_20260313_183003.log](/home/enmin/Seeed_Grove_Vision_AI_Module_V2/logs/pipeline/pipeline_with-model_optical_cam_oflow_20260313_183003.log)
 - 若改动涉及导出逻辑，回看
   [MODEL_EXPORT.md](/home/enmin/Seeed_Grove_Vision_AI_Module_V2/docs/MODEL_EXPORT.md)
 - 每轮实验必须先写 Vela 侧结论，再写板端结论

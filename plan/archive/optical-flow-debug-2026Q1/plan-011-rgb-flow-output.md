@@ -1,3 +1,5 @@
+> Archived note: this file preserves historical debugging work. Do not use it as the current baseline; read `docs/DEPLOYMENT.md`, `docs/MINIMAL_DEPLOYMENT.md`, and `plan-018-optical-flow-project-reorganization.md` first.
+
 # Plan 011：彩色光流输出 - 分块渲染方案
 
 > **状态**: 执行中 | **决策**: 方案 A（分块渲染）

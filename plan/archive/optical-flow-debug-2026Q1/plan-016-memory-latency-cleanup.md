@@ -1,3 +1,5 @@
+> Archived note: this file preserves historical debugging work. Do not use it as the current baseline; read `docs/DEPLOYMENT.md`, `docs/MINIMAL_DEPLOYMENT.md`, and `plan-018-optical-flow-project-reorganization.md` first.
+
 # Plan 016：主链路内存地图、延迟优化与调试清理
 
 > **状态**: 📋 待审阅 | **日期**: 2026-02-26

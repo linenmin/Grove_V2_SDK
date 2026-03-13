@@ -1,3 +1,5 @@
+> Archived note: this file preserves historical debugging work. Do not use it as the current baseline; read `docs/DEPLOYMENT.md`, `docs/MINIMAL_DEPLOYMENT.md`, and `plan-018-optical-flow-project-reorganization.md` first.
+
 # Plan 013：光流 2x 水平重复 — 输出布局终极判定
 
 > **状态**: 待执行 | **前置**: Plan-012 D8.2 Attempt 3 已将 Planar 模式开启，修复了"双头"问题

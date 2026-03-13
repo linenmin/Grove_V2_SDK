@@ -1,3 +1,5 @@
+> Archived note: this file preserves historical debugging work. Do not use it as the current baseline; read `docs/DEPLOYMENT.md`, `docs/MINIMAL_DEPLOYMENT.md`, and `plan-018-optical-flow-project-reorganization.md` first.
+
 # Plan 014: 分析反馈 - Planar 的 2x 重复错觉与 NHWC 终极复盘
 
 > **由 Agent 自动生成**

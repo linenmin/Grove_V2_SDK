@@ -1,3 +1,5 @@
+> Archived note: this file preserves historical debugging work. Do not use it as the current baseline; read `docs/DEPLOYMENT.md`, `docs/MINIMAL_DEPLOYMENT.md`, and `plan-018-optical-flow-project-reorganization.md` first.
+
 # Plan 010：Vela 输入通道映射问题诊断（压缩版）
 
 > **最后更新**: 2026-02-24 晚 | **状态**: D12 完成，等待下一步验证

@@ -1,3 +1,5 @@
+> Archived note: this file preserves historical debugging work. Do not use it as the current baseline; read `docs/DEPLOYMENT.md`, `docs/MINIMAL_DEPLOYMENT.md`, and `plan-018-optical-flow-project-reorganization.md` first.
+
 # Plan 012：光流条纹问题与分辨率分析
 
 > **状态**: ✅ 已定位并修复根因 | **关键进展**: 确认 NPU 输出为 Planar 布局，并修复了摄像头 DMA 竞态导致的撕裂。光流画面结构现已正常。

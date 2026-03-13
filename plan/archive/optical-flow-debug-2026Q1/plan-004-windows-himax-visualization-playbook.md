@@ -1,3 +1,5 @@
+> Archived note: this file preserves historical debugging work. Do not use it as the current baseline; read `docs/DEPLOYMENT.md`, `docs/MINIMAL_DEPLOYMENT.md`, and `plan-018-optical-flow-project-reorganization.md` first.
+
 # Windows + Himax 可视化实操手册（optical_cam_oflow）
 
 ## 0. 先说结论（为什么 connect 成功但没输出）

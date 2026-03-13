@@ -4,6 +4,27 @@
 
 ## Available Skills
 
+## Project Entry For 0-Context Agents
+
+Before doing substantive work on this repo, read these files in order:
+
+1. `plan/README.md`
+2. `docs/MINIMAL_DEPLOYMENT.md`
+3. `docs/DEPLOYMENT.md`
+4. `docs/MODEL_EXPORT.md`
+5. `docs/KNOWLEDGE_BASE.md`
+6. `plan/plan-018-optical-flow-project-reorganization.md`
+
+Current project baseline:
+
+- Treat `157x203 -> 160x208` as the current valid deployment baseline.
+- Treat `158x202` and above as runtime-budget experiments, not the default route.
+- Treat `144x192` and `150x200 -> 160x208` as older validated/experimental history, not the default route.
+- Do not rewrite the root `README.md`; keep the upstream Seeed semantics intact.
+
+If you only need the fastest reproducible route, use `docs/MINIMAL_DEPLOYMENT.md` first.
+If the model file is missing or needs regeneration, use `docs/MODEL_EXPORT.md`.
+
 <!-- SKILLS_TABLE_START -->
 <usage>
 When users ask you to perform tasks, check if any of the available skills below can help complete the task more effectively. Skills provide specialized capabilities and domain knowledge.
@@ -42,7 +63,7 @@ Usage notes:
 
 <skill>
 <name>we2-optical-sd-pipeline</name>
-<description>Runs the Grove Vision AI V2 optical_sd/optical_cam_oflow firmware iteration pipeline in WSL2 with dual flash modes (nomodel and with-model), including build, image generation, xmodem flash, UART keyword verification, and USB re-attach guidance. Supports agent-visible visualization: --viz-camera + --extract-frames to extract INVOKE images for agent to read. Use when user mentions optical_sd, optical_cam_oflow, cvapp_yolov8n_ob.cpp, flash_img_opticalSD, xmodem, usbipd, agent 可见, 可视化调试, extract-frames, pipeline.</description>
+<description>Runs the Grove Vision AI V2 optical_sd/optical_cam_oflow firmware iteration pipeline in WSL2 with dual flash modes (nomodel and with-model), including build, image generation, xmodem flash, UART keyword verification, and USB re-attach guidance. Supports agent-visible visualization: --viz-camera + --extract-frames to extract INVOKE images for agent to read. Use when user mentions optical_sd, optical_cam_oflow, cvapp_optical_flow.cpp, flash_img_opticalSD, xmodem, usbipd, agent 可见, 可视化调试, extract-frames, pipeline.</description>
 <location>project</location>
 </skill>
 

@@ -74,6 +74,15 @@ Phase 7
 - [ ] 根据这轮 `Vela` 结果锁定 first-round HPC 训练组合
 - **Status:** in_progress
 
+### Phase 8: Fixed-Arch Sintel Evaluation Hook
+
+- [ ] 为 `wrappers/fixed_arch_compare/run_train.py` 补一套对应的 Sintel evaluator
+- [ ] 支持从 joint-training experiment 目录自动发现 `baseline / ablation / full`
+- [ ] 支持直接加载 `best` 或 `last` checkpoint
+- [ ] 输出每个模型的 Sintel EPE 汇总，便于判断 FC2 是否过于简单
+- [ ] 将用法和判断原则写回计划文档
+- **Status:** in_progress
+
 ## Key Questions
 
 1. 哪些推荐 idea 在当前 Ethos-U55 支持算子约束下可以直接进入实验？
@@ -108,6 +117,7 @@ Phase 7
 | 用户将可接受时延阈值放宽到“小于 20% 即可考虑”后，`globalgate4x_bneckeca_skip8x4x2x` 升级为扩展训练候选 | 该版本的 `182.915 ms` 仍明显落在用户当前可接受区间内，适合保留为多尺度上限参照 |
 | fixed-arch 训练前的 `Vela` 预检统一使用 `172x224` | 必须和前面真实部署验证的输入口径一致，避免训练后再发现部署侧几何/峰值不对齐 |
 | fixed-arch first-round 训练仍保留三模型 joint training | `baseline` 给干净参照，`globalgate4x_bneckeca` 给轻量消融，`globalgate4x_bneckeca_skip8x4x2x` 负责先看 accuracy 上限 |
+| 当 FC2 上三模型差距不明显时，优先补 Sintel evaluator，而不是立即改结构 | 先验证“数据集是否过于简单”这个假设，避免过早把问题归因到模型设计本身 |
 
 ## Errors Encountered
 

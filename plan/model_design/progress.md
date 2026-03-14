@@ -222,6 +222,14 @@
 - 这说明当前 joint training 的三模型设计和前面 bilinear 结构实验的部署结论是一致的：真正需要关注的是时延差异，而不是峰值被新结构打穿。
 - fixed-arch `globalgate4x_bneckeca` 相比 fixed-arch baseline 只慢约 `0.83%`，完全可以作为 joint training 的轻量消融项。
 - fixed-arch `globalgate4x_bneckeca_skip8x4x2x` 相比 fixed-arch baseline 慢约 `5.80%`，仍远低于用户当前可接受的 `20%` 时延阈值，因此可直接进入 first-round 上限训练。
+- 用户在 `epoch 80` 的 fixed-arch 训练结果里观察到：`ablation` 只小幅优于 baseline，而 full 版暂时没有拉开差距，因此下一步补 joint-training 对应的 Sintel evaluator，用来验证“FC2 对这些结构是否过于简单”这个假设。
+- 已在 `MCUFlowNet/EdgeFlowNAS` 中新增 fixed-arch joint training 的 Sintel evaluator，路径是 `wrappers/fixed_arch_compare/run_sintel_test.py`。
+- 新 evaluator 支持：
+  - 直接读取整个 `experiment_dir`
+  - 自动发现 `model_baseline / model_ablation / model_full`
+  - 从 `run_manifest.json` 解析每个模型对应的 `variant`
+  - 按 `best` 或 `last` checkpoint 批量输出 `sintel_eval_<ckpt>.json/.csv`
+- 这一步的目的不是替代 FC2 验证，而是给“FC2 是否过于简单”这个怀疑补一个跨数据集判据。
 
 ## Error Log
 

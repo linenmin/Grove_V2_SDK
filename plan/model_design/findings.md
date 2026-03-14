@@ -156,6 +156,18 @@
 - 三个 fixed-arch 候选的 `Vela` hotspot 仍都落在最终 `ResizeBilinear_1`，没有因为 `global gate` 或三尺度 skip 把峰值前移。
 - `globalgate4x_bneckeca` 相比 fixed-arch `baseline` 只慢约 `0.83%`，代价非常小，仍适合作为稳妥消融项。
 - `globalgate4x_bneckeca_skip8x4x2x` 相比 fixed-arch `baseline` 慢约 `5.80%`，仍明显低于用户当前“20% 内都可考虑”的阈值，因此它完全可以作为“先看 accuracy 上限”的训练主力版本。
+- fixed-arch `172x224` joint training 跑到 `epoch 80` 后，三模型的差距并不大，这本身是一个重要信号：当前改造没有带来“立刻拉开”的精度收益。
+- 从用户提供的 `comparison.csv` 看，`globalgate4x_bneckeca` 在 `16` 个评估点里有 `14` 次优于 baseline，最终 `epoch 80` 的 `EPE` 是 `4.1486`，baseline 是 `4.1606`；这说明 gate-only 版本大概率是“轻微有效”，但收益幅度很小。
+- 同一份 `comparison.csv` 里，full 版 `globalgate4x_bneckeca_skip8x4x2x` 只在 `16` 个评估点里有 `3` 次优于 baseline，最终 `epoch 80` 的 `EPE = 4.2107`，反而比 baseline 差约 `0.0502`；这说明 full 版至少在当前训练阶段还没有兑现它的结构上限。
+- 这里不能简单解读成“full 结构无效”，更合理的解释是“当前它比 baseline 更难优化”。因为这次训练只到 `80/400 epochs`，学习率仍在 `9.05e-5`，离初始 `1e-4` 很近，实际上还处在比较早的训练阶段。
+- 另一个重要原因是当前 full 版的 `/4` 和 `/2` skip 在 `172x224` 下都包含静态 `PAD` 对齐；这对部署是安全的，但对学习未必理想。也就是说，这版 full 并不是一个“几何上很干净的 U-Net skip”，而是一个带边界补齐的工程实现。
+- full 版还同时叠加了 `bottleneck ECA + /4 global gate + /8 /4 /2 additive skip`。这会增加优化耦合度；在完全沿用 baseline 学习率、batch size、loss 权重的情况下，更复杂的版本更容易表现为“前期收敛慢，而不是最终上限低”。
+- 当前损失函数不是纯 EPE/L1，而是带 uncertainty 分支的 multiscale loss。更复杂的 full 结构可能先把容量用在 uncertainty 分支的重标定上，而不会立即转化成更低的 flow EPE；这也是“loss 在下降，但 EPE 优势没有同步拉开”的合理解释之一。
+- 评估口径本身也值得标注：当前 `_evaluate_model()` 使用的是 `Train-Mode BN`，不是严格的 inference-mode BN。这个口径对三模型相互比较仍然有参考价值，但会放大 batch 统计带来的波动，因此不应该把当前 `±0.05 EPE` 量级的差距过度绝对化。
+- 综合判断：到 `epoch 80` 为止，当前最稳的结论不是“full 失败”，而是：
+  - `globalgate4x_bneckeca` 已经显示出小而稳定的正收益；
+  - full 版目前更像“潜在上限更高，但需要更长训练或更合适超参”的模型；
+  - 如果现在立刻停训，只凭 `epoch 80` 就否定三尺度 full，是不够严谨的。
 
 ## Technical Decisions
 

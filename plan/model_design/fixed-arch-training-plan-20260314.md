@@ -156,21 +156,108 @@
 
 ## Suggested HPC First Run
 
-第一轮建议：
+当前实际已切到：
 
-- 数据：沿用 `FC2 180x240`
+- 数据：`FC2 172x224`
 - 训练方式：`joint training`
-- 模型数：`2`
+- 模型数：`3`
 - 模型组合：
   - `fixed_baseline`
+  - `fixed_globalgate4x_bneckeca`
   - `fixed_globalgate4x_bneckeca_skip8x4x2x`
-- 目的：先看最关键的上限差值
 
-如果第一轮结果显示 full multiscale 明显优于 baseline，再开第二轮：
+原因：
 
-- `fixed_baseline`
-- `fixed_globalgate4x_bneckeca`
-- `fixed_globalgate4x_bneckeca_skip8x4x2x`
+- 用户已经确认 `172x224` 是当前部署对齐分辨率
+- `globalgate4x_bneckeca` 的部署代价非常小，适合作为轻量消融
+- full 版的部署代价也仍在可接受范围内，值得直接观察 accuracy 上限
+
+## Observed Training Readout (epoch 80)
+
+用户提供的 `comparison.csv` 截至 `epoch 80` 的读数：
+
+- `baseline`: `EPE = 4.1606`
+- `globalgate4x_bneckeca`: `EPE = 4.1486`
+- `globalgate4x_bneckeca_skip8x4x2x`: `EPE = 4.2107`
+
+### Direct Observations
+
+- `globalgate4x_bneckeca` 在 `16` 个评估点中有 `14` 次优于 baseline，说明它的收益虽然小，但趋势是稳定偏正的。
+- full 版只在 `16` 个评估点中有 `3` 次优于 baseline，当前并没有表现出比 baseline 更强的收敛。
+- 但 full 版和 baseline 的差距仍然不大，最终只差约 `0.0502 EPE`；这不是一个足以立刻判定“结构失败”的量级。
+
+### Likely Reasons
+
+1. **训练还太早**
+
+- 当前只跑到 `80/400 epochs`
+- 学习率仍在 `9.05e-5`，离初始 `1e-4` 很近
+- 对于更复杂的 full 版，这更像“尚未收敛充分”，而不是“最终上限已被证明更差”
+
+2. **full 版的多尺度 skip 不是几何上完全干净的 U-Net**
+
+- 在 `172x224` 下，`/4` 与 `/2` skip 都需要静态 `PAD`
+- 这对部署安全，但会让 skip 学习到的边界信息不如理想 U-Net 那样干净
+- 因此这版 full 更准确地说是“工程可部署的轻量多尺度版”，不是 textbook U-Net
+
+3. **优化难度明显高于 baseline**
+
+- full 版同时引入：
+  - bottleneck `ECA`
+  - decoder `/4` global gate
+  - `/8 + /4 + /2` additive skip
+- 这些模块一起上，会增加优化耦合度
+- 如果仍沿用 baseline 同一套 `lr / batch_size / schedule`，更复杂模型在前中期收敛更慢是很常见的
+
+4. **当前 loss 不是纯 EPE**
+
+- 训练用的是带 uncertainty 分支的 multiscale loss
+- 更复杂的 full 版可能先把容量花在 uncertainty 标定，而不会立刻转化成更低的 flow EPE
+- 这会造成“训练 loss 正常下降，但验证 EPE 优势没有同步显现”的现象
+
+5. **当前验证口径会压缩小差距的可信度**
+
+- 当前 `_evaluate_model()` 使用的是 `Train-Mode BN`
+- 这对三模型相互比较仍有参考价值，但会引入 batch-stat 噪声
+- 因此像 `±0.05 EPE` 这种量级，不应该被过度绝对化
+
+### Current Decision
+
+- 到 `epoch 80` 为止：
+  - `globalgate4x_bneckeca` 可以认为是“小幅稳定正收益”
+  - full 版可以认为是“暂时没有兑现上限，但还不能判死刑”
+- 这意味着：
+  - 如果训练预算允许，full 版应该继续跑到更后期再判断
+  - 如果训练预算很紧，当前最稳妥的赢家其实是 `globalgate4x_bneckeca`
+
+### Recommended Next Judgment Point
+
+建议不要在 `epoch 80` 就下最终结论，至少等到下面两个节点之一：
+
+1. `epoch 200`
+2. `cosine` 学习率明显下降后的后半程
+
+如果到那时 full 版仍持续落后 baseline，再把结论升级成“这条三尺度实现方式不值得继续”会更严谨。
+
+## Next Step: Sintel Evaluator
+
+由于当前 FC2 上三模型差距很小，而且用户明确怀疑“FC2 对这些结构过于简单”，因此下一步不是立刻继续改结构，而是先补跨数据集验证入口。
+
+新增目标：
+
+- 为 fixed-arch joint training 补一个和 `run_standalone_test.py` 对应的 Sintel evaluator
+- 能直接从 `outputs/fixed_arch_compare/<experiment>/` 读取：
+  - `model_baseline`
+  - `model_ablation`
+  - `model_full`
+- 自动根据 `run_manifest.json` 恢复各自的 `variant`
+- 支持评估 `best` 或 `last` checkpoint
+- 输出统一的 `json/csv` 汇总，避免手工逐个模型抄 EPE
+
+判断意义：
+
+- 如果在 FC2 上差距小，但在 Sintel 上能明显拉开，那么更合理的归因就是“FC2 对结构差异不够敏感”
+- 如果在 Sintel 上仍然拉不开，才更应该反过来审视 full 结构本身或训练超参
 
 ## Pending Confirmation
 

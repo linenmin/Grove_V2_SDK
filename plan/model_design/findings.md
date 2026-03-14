@@ -168,6 +168,21 @@
   - `globalgate4x_bneckeca` 已经显示出小而稳定的正收益；
   - full 版目前更像“潜在上限更高，但需要更长训练或更合适超参”的模型；
   - 如果现在立刻停训，只凭 `epoch 80` 就否定三尺度 full，是不够严谨的。
+- 用户随后补充了 `best.ckpt` 的 Sintel 评估结果：
+  - `baseline`: `fc2_val_epe = 4.044281`，`sintel_epe = 6.001463`
+  - `globalgate4x_bneckeca`: `fc2_val_epe = 3.985728`，`sintel_epe = 5.579553`
+  - `globalgate4x_bneckeca_skip8x4x2x`: `fc2_val_epe = 3.920078`，`sintel_epe = 5.647002`
+- 这组结果说明 `FC2` 的判别力确实有限：在 `FC2 val` 上三者差距不大，但到了更难的 `Sintel`，两个改造版都明显优于 baseline。
+- 当前最稳的跨域赢家是 `globalgate4x_bneckeca`：它同时改善了 `FC2 val` 和 `Sintel`，而且部署代价非常小。
+- full 版并不是“无效”，因为它同样明显优于 baseline；但它在 `Sintel` 上没有超过 `ablation`，说明“更复杂”没有自动转化成更强的跨域泛化。
+- 这里最重要的解释不是“full 架构不行”，而是 checkpoint 选择口径：`run_sintel_test.py --ckpt_name best` 加载的是训练期间按 `FC2 val EPE` 最低时保存的 `best.ckpt`，不是按 `Sintel EPE` 选出来的 checkpoint。
+- 这意味着当前看到的是“每个模型的 `FC2-best` checkpoint 在 Sintel 上的表现”，而不是“每个模型的 `Sintel-best` checkpoint 表现”。
+- 对 `ablation` 这种更克制的结构，`FC2-best` 和 `Sintel-best` 往往更接近，所以它现在看起来更稳。
+- 对 full 这种更高容量的结构，`FC2-best` 可能更偏向任务内细节拟合，而不一定是跨域泛化最好的 stopping point；因此当前更像是“checkpoint 选择可能不匹配”，而不是“full 一定比 ablation 差”。
+- 到目前为止可以更有把握地更新结论：
+  - baseline 已被两个改造版在 `Sintel` 上明确超越；
+  - `globalgate4x_bneckeca` 是当前最值得优先信任和部署的训练候选；
+  - `globalgate4x_bneckeca_skip8x4x2x` 仍然值得继续分析，但下一步重点应转向“它的 `Sintel-best` epoch 是否不同于 `FC2-best` epoch”，而不只是继续盲目延长训练。
 
 ## Technical Decisions
 

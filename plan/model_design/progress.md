@@ -230,6 +230,15 @@
   - 从 `run_manifest.json` 解析每个模型对应的 `variant`
   - 按 `best` 或 `last` checkpoint 批量输出 `sintel_eval_<ckpt>.json/.csv`
 - 这一步的目的不是替代 FC2 验证，而是给“FC2 是否过于简单”这个怀疑补一个跨数据集判据。
+- 用户随后补充了真实 `Sintel` 结果：
+  - `baseline`: `fc2_val_epe = 4.044281`，`sintel_epe = 6.001463`
+  - `ablation/globalgate4x_bneckeca`: `fc2_val_epe = 3.985728`，`sintel_epe = 5.579553`
+  - `full/globalgate4x_bneckeca_skip8x4x2x`: `fc2_val_epe = 3.920078`，`sintel_epe = 5.647002`
+- 这轮结果确认：`FC2` 的确没有完全显露跨域排序；两个改造版在 `Sintel` 上都明显优于 baseline。
+- 同时也确认了一个评估口径问题：当前 `--ckpt_name best` 实际表示“FC2-best checkpoint”，不是 “Sintel-best checkpoint”。
+- 现阶段新的阶段性结论是：
+  - `ablation` 是当前最稳的跨域赢家；
+  - `full` 仍优于 baseline，但它是否真正优于 `ablation`，需要进一步看 `epoch` 选择而不是只看单个 `best.ckpt`。
 
 ## Error Log
 

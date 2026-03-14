@@ -259,6 +259,71 @@
 - 如果在 FC2 上差距小，但在 Sintel 上能明显拉开，那么更合理的归因就是“FC2 对结构差异不够敏感”
 - 如果在 Sintel 上仍然拉不开，才更应该反过来审视 full 结构本身或训练超参
 
+## Observed Sintel Readout (best.ckpt)
+
+用户补充的 `Sintel Final train` 结果如下：
+
+- `baseline`: `fc2_val_epe = 4.044281`，`sintel_epe = 6.001463`
+- `globalgate4x_bneckeca`: `fc2_val_epe = 3.985728`，`sintel_epe = 5.579553`
+- `globalgate4x_bneckeca_skip8x4x2x`: `fc2_val_epe = 3.920078`，`sintel_epe = 5.647002`
+
+### Direct Interpretation
+
+- 这已经足够说明当前结构改造不是“只在 FC2 上有效”。两个改造版在 `Sintel` 上都明显优于 baseline。
+- `globalgate4x_bneckeca` 是当前最稳的赢家：它不仅在 `FC2 val` 上优于 baseline，在 `Sintel` 上也拿到了三者中最好的结果。
+- full 版在 `FC2 val` 上最好，但在 `Sintel` 上没有超过 `ablation`。这说明 full 更像一个高容量模型，而不是一个天然更稳的跨域模型。
+
+### Why The Epoch Feels Unclear
+
+这里最关键的是 checkpoint 语义：
+
+- `run_sintel_test.py --ckpt_name best` 读取的是训练期间按 `FC2 val EPE` 最低时保存的 `best.ckpt`
+- 不是按 `Sintel EPE` 选出来的 `best`
+
+所以当前结果应该理解成：
+
+- “每个模型在自己 `FC2-best` checkpoint 上的 Sintel 表现”
+
+而不是：
+
+- “每个模型在自己 `Sintel-best` checkpoint 上的表现”
+
+这两者对复杂度不同的模型来说，很可能不是同一个 epoch。
+
+### Engineering Interpretation
+
+从工程角度，这组结果最像下面这个模式：
+
+1. `globalgate4x_bneckeca` 是低风险、强泛化增强项
+
+- 结构克制
+- 额外部署代价很低
+- 对 `FC2` 和 `Sintel` 都有稳定正收益
+
+2. `globalgate4x_bneckeca_skip8x4x2x` 是更高容量的上限模型
+
+- 它对 `FC2` 更有利，说明容量确实被利用上了
+- 但它的 `FC2-best` checkpoint 还没有转换成当前最好的 `Sintel` 结果
+- 更像“checkpoint selection 还没对上”，而不是“结构没有价值”
+
+### Updated Decision
+
+现阶段最合理的训练/评估结论是：
+
+1. `baseline` 已完成基准使命
+2. `globalgate4x_bneckeca` 是当前最值得优先保留和部署验证的版本
+3. `globalgate4x_bneckeca_skip8x4x2x` 仍值得继续追踪，但下一步重点应该是验证它的 `Sintel-best epoch`，而不是只盯住当前的 `FC2-best` checkpoint
+
+### Recommended Next Evaluation
+
+如果你后面想把这条线做扎实，下一步最值得补的是：
+
+1. 在训练过程中保留更多 `epoch checkpoint`
+2. 对 `full` 和 `ablation` 做一次 epoch-sweep 的 Sintel 评估
+3. 明确回答：
+   - `full` 的 `Sintel-best epoch` 是否晚于/早于 `FC2-best epoch`
+   - `ablation` 的 `FC2-best` 和 `Sintel-best` 是否更接近
+
 ## Pending Confirmation
 
 当前最需要你拍板的只有两件事：

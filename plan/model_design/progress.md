@@ -239,6 +239,31 @@
 - 现阶段新的阶段性结论是：
   - `ablation` 是当前最稳的跨域赢家；
   - `full` 仍优于 baseline，但它是否真正优于 `ablation`，需要进一步看 `epoch` 选择而不是只看单个 `best.ckpt`。
+- 用户进一步要求规划“六模型冲榜训练”，并明确不再重训 `baseline` 与 `ablation`。
+- 本轮新增计划结论：
+  - 训练分辨率继续固定 `172x224`，先保持和已有曲线完全一致；
+  - 训练入口继续扩展现有 `fixed_arch_compare/run_train.py`，不新开平行脚本；
+  - 后续单模型训练仍沿用同一入口，通过 `--model_variants`/`--model_names` 选择单个模型；
+  - 新增文档 `fixed-arch-six-model-plan-20260315.md`，固化六模型冲榜候选和脚本组织建议。
+- 在 `MCUFlowNet/EdgeFlowNAS/efnas/network/fixed_arch_models.py` 中实现了 6 个新变体：
+  - `globalgate4x_bneckeca_skip8x4x`
+  - `globalgate8x4x_bneckeca`
+  - `globalgate8x4x_bneckeca_skip8x`
+  - `globalgate4x_dual_eca8_bneckeca`
+  - `globalgate8x4x_bneckeca_skip8x4x`
+  - `skip8x4x`
+- 新增：
+  - `configs/fixed_arch_compare_fc2_172x224_leaderboard6.yaml`
+  - `wrappers/fixed_arch_compare/run_vela_precheck.py`
+- 本地验证已完成：
+  - `py_compile` 通过
+  - 6 个新变体合成 batch dry-run 通过
+  - `172x224` 的 INT8 TFLite + Vela 预检通过
+- Vela 结果确认：
+  - 6 个新变体全部保持 `SRAM peak = 1386.00 KiB`
+  - hotspot 仍全部是最终 `ResizeBilinear_1`
+  - 最快的是 `globalgate4x_dual_eca8_bneckeca (168.445 ms)`
+  - 最重的是 `globalgate8x4x_bneckeca_skip8x4x (172.374 ms)`
 
 ## Error Log
 

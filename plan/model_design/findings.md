@@ -183,6 +183,51 @@
   - baseline 已被两个改造版在 `Sintel` 上明确超越；
   - `globalgate4x_bneckeca` 是当前最值得优先信任和部署的训练候选；
   - `globalgate4x_bneckeca_skip8x4x2x` 仍然值得继续分析，但下一步重点应转向“它的 `Sintel-best` epoch 是否不同于 `FC2-best` epoch”，而不只是继续盲目延长训练。
+- 用户随后进一步明确：下一轮不希望继续投入成本重训 `baseline` 和 `globalgate4x_bneckeca`，而是希望把训练资源集中到“有机会超过当前 ablation”的新模型上。
+- 基于 `95~300 epoch` 的 `FC2 + Sintel` 曲线，当前更可信的结构判断是：
+  - `full/globalgate4x_bneckeca_skip8x4x2x` 的主要问题更像 `/2 skip` 导致的跨域泛化回退，而不是表达力不足；
+  - 当前最值得押注的下一轮，不是继续往 `/2` 和高分辨率层叠更多 gate/ECA，而是做**更克制的多尺度版**和**更早阶段的低成本全局引导**。
+- 关于是否切换到 `8/16` 倍数分辨率来减少 `PAD` 对准确率的影响，当前建议是**先不切**：
+  - 现在最重要的是与已有 `172x224` 的 `baseline / ablation / full` 曲线做苹果对苹果比较；
+  - 若现在切到 `176x224`，会把“结构变化”与“输入几何变化”混在一起，削弱对结构本身的判断；
+  - `PAD` 可能确实会伤精度，但从目前训练现象看，它还不是主导矛盾。
+- 关于训练入口组织，当前建议是**继续扩展现有 `fixed_arch_compare/run_train.py`**：
+  - 现有 trainer 已支持任意数量模型联合训练；
+  - CLI 已有 `--model_variants` / `--model_names`；
+  - 后续单模型训练也可直接沿用同一入口，只传一个 variant，不值得新开一套平行脚本。
+- 当前最值得进入六模型冲榜训练实现的 6 个变体是：
+  - `globalgate4x_bneckeca_skip8x4x`
+  - `globalgate8x4x_bneckeca`
+  - `globalgate8x4x_bneckeca_skip8x`
+  - `globalgate4x_dual_eca8_bneckeca`
+  - `globalgate8x4x_bneckeca_skip8x4x`
+  - `skip8x4x`
+- 这 6 个变体的共同策略很明确：
+  - 避开 `/2` 级强路径
+  - 优先增强 `/8` 与 `/4` 的低成本引导与回流
+  - 优先测试“比 full 更克制”的上限结构，而不是继续把 attention/gate 叠满
+- 上述 6 个变体已在 `MCUFlowNet/EdgeFlowNAS/efnas/network/fixed_arch_models.py` 中完成实现，并补充了：
+  - `configs/fixed_arch_compare_fc2_172x224_leaderboard6.yaml`
+  - `wrappers/fixed_arch_compare/run_vela_precheck.py`
+- 训练侧 dry-run 已完成：6 个新变体都能正常建图、初始化并跑通 1 step train/eval。
+- `172x224` 的 TFLite + Vela 预检也已完成，6 个新变体全部满足当前部署侧约束：
+  - `SRAM peak` 全部仍为 `1386.00 KiB`
+  - hotspot 仍全部落在最终 `ResizeBilinear_1`
+- 6 个新变体在 `172x224`、`optimise=Size` 下的 Vela 预检时延排序如下：
+  - `globalgate4x_dual_eca8_bneckeca`: `168.445 ms`, `5.937 FPS`
+  - `globalgate8x4x_bneckeca`: `168.606 ms`, `5.931 FPS`
+  - `globalgate8x4x_bneckeca_skip8x`: `169.707 ms`, `5.893 FPS`
+  - `skip8x4x`: `170.247 ms`, `5.874 FPS`
+  - `globalgate4x_bneckeca_skip8x4x`: `171.396 ms`, `5.834 FPS`
+  - `globalgate8x4x_bneckeca_skip8x4x`: `172.374 ms`, `5.801 FPS`
+- 这轮结果比预期更积极：即使是“更冲榜”的双 gate + 双 skip 版本，也没有把峰值从当前 `1386.00 KiB` 推高。
+- 从纯部署代价看，当前这 6 个候选里最轻的是：
+  - `globalgate4x_dual_eca8_bneckeca`
+  - `globalgate8x4x_bneckeca`
+- 从“在可接受部署代价下仍保留较强表达力”的折中角度看，当前最值得优先训练的三者仍是：
+  - `globalgate4x_bneckeca_skip8x4x`
+  - `globalgate8x4x_bneckeca`
+  - `globalgate8x4x_bneckeca_skip8x`
 
 ## Technical Decisions
 

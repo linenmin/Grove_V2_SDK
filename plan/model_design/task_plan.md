@@ -83,6 +83,25 @@ Phase 7
 - [ ] 将用法和判断原则写回计划文档
 - **Status:** in_progress
 
+### Phase 9: Six-Model Leaderboard Training Prep
+
+- [x] 基于 `95~300 epoch` 的 `FC2 + Sintel` 曲线重新筛一轮最值得训练的新模型
+- [x] 明确本轮是否需要切到 `8/16` 倍数分辨率
+- [x] 明确训练入口应该扩展现有 `fixed_arch_compare/run_train.py` 还是新开脚本
+- [x] 明确后续单模型训练是否沿用同一入口
+- [x] 输出新的 6 模型训练计划文档
+- **Status:** complete
+
+### Phase 10: Six-Model Code Landing & Vela Precheck
+
+- [x] 在 `EdgeFlowNAS` 的 `FixedArchModel` 中实现 6 个新 variant
+- [x] 增加 6 模型默认训练 config
+- [x] 增加 fixed-arch Vela 预检脚本
+- [x] 完成 6 个 variant 的训练图 dry-run
+- [x] 完成 `172x224` 下的 TFLite + Vela 预检
+- [ ] 提交并推送相关代码与计划更新
+- **Status:** in_progress
+
 ## Key Questions
 
 1. 哪些推荐 idea 在当前 Ethos-U55 支持算子约束下可以直接进入实验？
@@ -118,6 +137,12 @@ Phase 7
 | fixed-arch 训练前的 `Vela` 预检统一使用 `172x224` | 必须和前面真实部署验证的输入口径一致，避免训练后再发现部署侧几何/峰值不对齐 |
 | fixed-arch first-round 训练仍保留三模型 joint training | `baseline` 给干净参照，`globalgate4x_bneckeca` 给轻量消融，`globalgate4x_bneckeca_skip8x4x2x` 负责先看 accuracy 上限 |
 | 当 FC2 上三模型差距不明显时，优先补 Sintel evaluator，而不是立即改结构 | 先验证“数据集是否过于简单”这个假设，避免过早把问题归因到模型设计本身 |
+| 六模型冲榜训练继续固定 `172x224` | 当前最重要的是和已有 `baseline / ablation / full` 曲线做苹果对苹果比较，先不要把结构效果和分辨率变化混在一起 |
+| 六模型训练入口继续扩展现有 `fixed_arch_compare/run_train.py` | 现有 trainer 已支持任意数量模型联合训练，且天然支持后续单模型训练，不值得再开平行入口 |
+| `best.ckpt` 仍按 `FC2 val EPE` 选择 | 用 Sintel 选 best 会泄漏目标域信息，破坏跨域评估干净性 |
+| 六模型主力方向优先押“去掉 `/2 skip` 的更克制多尺度版”和“在 `ablation` 上加 `/8 global gate`” | 当前最强是克制的 `ablation`，说明继续往 `/2` 和高分辨率强路径堆模块不是最优方向 |
+| 六模型代码继续落在 `EdgeFlowNAS/efnas/network/fixed_arch_models.py` | 新变体只是 fixed-subnet 上的结构开关扩展，不值得拆新模型文件体系 |
+| 额外增加 `run_vela_precheck.py` | 这轮以及后续新 variant 都需要固定在 `172x224` 下快速检查 `SRAM peak` 和 `FPS`，复用脚本比临时命令更稳 |
 
 ## Errors Encountered
 
@@ -137,6 +162,9 @@ Phase 7
 | `globalgate4x_bneckeca_skip4x` 需要确认按当前最稳主线继续加 `/4` skip 是否仍值得训练 | 1 | 已完成验证，确认能跑通且不碰峰值，但速度代价已经不划算 |
 | `globalgate4x_bneckeca_skip2x` / `skip8x` 需要确认是不是比 `/4` 更值得做 | 1 | 已完成 `Vela-only` 对比，确认 `skip8x` 更优、`skip2x` 更差 |
 | 真正的多尺度长跳跃 (`1/8 + 1/4 + 1/2`) 是否值得做训练候选 | 1 | 已完成 `skip8x4x` 与 `skip8x4x2x` 对比，确认 `/8 + /4` 可保留，`+ /2` 不保留 |
+| 六模型冲榜训练是否应该切到 `8/16` 倍数分辨率以减少 `PAD` 对准确率的影响 | 1 | 当前建议不切；先保持 `172x224` 做结构对比，若后续专门做几何 clean 版本，再单独开 `176x224` 分辨率分支 |
+| 六模型冲榜训练是否需要新写一套训练入口 | 1 | 当前建议不需要；继续扩展现有 `fixed_arch_compare` 入口，并通过 `--model_variants/--model_names` 支持多模型与单模型训练 |
+| 六模型实现后是否都满足当前部署侧约束 | 1 | 已完成 `172x224` Vela 预检；6 个新变体全部保持 `SRAM peak = 1386.00 KiB`，热点仍为最终 `ResizeBilinear_1` |
 
 ## Notes
 
@@ -200,6 +228,10 @@ Phase 7
   [172x224](/home/enmin/Seeed_Grove_Vision_AI_Module_V2/tools/model_export/optical_flow_144x192/output_bilinear_globalgate4x_bneckeca_skip8x4x/172x224)
 - `globalgate4x_bneckeca_skip8x4x2x` 结果目录：
   [172x224](/home/enmin/Seeed_Grove_Vision_AI_Module_V2/tools/model_export/optical_flow_144x192/output_bilinear_globalgate4x_bneckeca_skip8x4x2x/172x224)
+- 六模型冲榜训练计划：
+  [fixed-arch-six-model-plan-20260315.md](/home/enmin/Seeed_Grove_Vision_AI_Module_V2/plan/model_design/fixed-arch-six-model-plan-20260315.md)
+- 六模型 `172x224` Vela 汇总：
+  `/home/enmin/MCUFlowNet/EdgeFlowNAS/outputs/fixed_arch_vela_compare/172x224/summary.json`
 - 若改动涉及导出逻辑，回看
   [MODEL_EXPORT.md](/home/enmin/Seeed_Grove_Vision_AI_Module_V2/docs/MODEL_EXPORT.md)
 - 每轮实验必须先写 Vela 侧结论，再写板端结论

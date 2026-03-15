@@ -88,6 +88,7 @@
 - 当前 `globalgate4x_bneckeca_skip8x4x / skip8x4x2x` 结果：`plan/model_design/findings.md`
 - 当前轻量训练 shortlist：`plan/model_design/training-shortlist.md`
 - 当前 fixed-arch 训练计划：`plan/model_design/fixed-arch-training-plan-20260314.md`
+- 当前六模型冲榜训练计划：`plan/model_design/fixed-arch-six-model-plan-20260315.md`
 - 历史计划归档索引：`plan/archive/optical-flow-debug-2026Q1/README.md`
 - 最近技术背景：`plan/archive/optical-flow-debug-2026Q1/plan-016-memory-latency-cleanup.md`
 - 硬件事实查询：`docs/KNOWLEDGE_BASE.md` (Plan 中提取的精华)

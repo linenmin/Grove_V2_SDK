@@ -1,5 +1,86 @@
 # Progress Log
 
+## Session: 2026-03-31
+
+### Phase 12: Stem-Dilation Vela Probe
+
+- **Status:** complete
+- Actions taken:
+  - 参考现有 `progress.md` 的 bilinear Vela 流程，继续复用 `run_sram_test_bilinear.py --height 172 --width 224 --optimise Size --variant ...`
+  - 新增 `globalgate4x_bneckeca_stemdilate` 与 `globalgate4x_bneckeca_stempostdilate` 两个试验版，保持 `bottleneck ECA + /4 global gate` 不变，只改 `E0/E1`
+  - 本轮受控结构假设固定为：
+    - `E0`: `3x3 dilated conv(rate=3)`，再接 `3x3 stride-2 conv`
+    - `E1`: `3x3 dilated conv(rate=2)`，再接 `3x3 stride-2 conv`
+  - 第二个受控对照结构固定为：
+    - `E0`: `3x3 stride-2 conv`，再接 `3x3 dilated conv(rate=3)`
+    - `E1`: `3x3 stride-2 conv`，再接 `3x3 dilated conv(rate=2)`
+  - 为 bilinear 导出脚本增加新 variant 映射，并先做 `py_compile`
+  - 复跑原版 `globalgate4x_bneckeca` 的 `172x224` Vela 结果，确认当前环境下仍为：
+    - `SRAM peak = 1386.00 KiB`
+    - `inference_time ≈ 174.657 ms`
+    - hotspot 仍为最终 `ResizeBilinear_1`
+  - 第一次导出新试验版时，发现 `StemDilatedDownsampleBlock` 内误给 `ConvBNReLUBlock` 传入 `name` 参数，修正后重新导出
+  - 新试验版 `globalgate4x_bneckeca_stemdilate` 已成功完成 `172x224` Vela 编译
+  - 新试验版结果：
+    - `SRAM peak = 1386.00 KiB`
+    - `inference_time ≈ 198.706 ms`
+    - `FPS ≈ 5.033`
+    - hotspot 仍为最终 `ResizeBilinear_1`
+    - `Off-chip Flash = 2822.53 KiB`
+  - 回查 `detailed_performance.txt` 后确认新增主要代价集中在两层 stem dilated conv：
+    - `E0_stemdilate_dilated`: `8,202,299 cycles`, `10.32% Network`
+    - `E1_stemdilate_dilated`: `2,840,072 cycles`, `3.57% Network`
+  - 同时确认尾部峰值点没有前移，说明这次变慢不是由最终 resize 恶化导致，而是 stem 本身引入了明显额外卷积成本
+  - 新增对照版 `globalgate4x_bneckeca_stempostdilate` 也已成功完成 `172x224` Vela 编译
+  - `stempostdilate` 结果：
+    - `SRAM peak = 1386.00 KiB`
+    - `inference_time ≈ 190.056 ms`
+    - `FPS ≈ 5.261`
+    - hotspot 仍为最终 `ResizeBilinear_1`
+    - `Off-chip Flash = 2826.62 KiB`
+  - 回查 `detailed_performance.txt` 后确认 `stempostdilate` 的主要代价也集中在两层 stem dilated conv：
+    - `E0_stempostdilate_dilated`: `7,730,532 cycles`, `10.17% Network`
+    - `E1_stempostdilate_dilated`: `1,421,960 cycles`, `1.87% Network`
+  - 三者对比表明：
+    - 原版 `globalgate4x_bneckeca`: `174.657 ms`
+    - `stemdilate`（先空洞再下采样）: `198.706 ms`
+    - `stempostdilate`（先下采样再空洞）: `190.056 ms`
+  - 这说明把 dilation 放到下采样后确实更省，但当前实现仍慢于原版 `7x7/5x5` stem
+  - 随后继续补做只改 `E0` 的 dense 两层对照版 `globalgate4x_bneckeca_e0twolayer`：
+    - `E0`: `3x3 stride-2 conv`，再接 `3x3 stride-1 conv`
+    - `E1`: 保持原版 `5x5 stride-2 conv`
+  - `e0twolayer` 已成功完成 `172x224` Vela 编译，结果为：
+    - `SRAM peak = 1386.00 KiB`
+    - `inference_time ≈ 174.150 ms`
+    - `FPS ≈ 5.742`
+    - hotspot 仍为最终 `ResizeBilinear_1`
+    - `Off-chip Flash = 2814.94 KiB`
+  - 这版结果非常关键：它比原版 `globalgate4x_bneckeca (174.657 ms)` 还略快约 `0.507 ms`，差异虽小，但至少说明“E0 多插一层 dense 3x3”本身并不会像 dilation 那样明显拖慢
+  - 回查 `detailed_performance.txt` 后，`E0` 两层的主要指标为：
+    - `E0 first 3x3 stride-2`: `483,904 cycles`, `0.69% Network`, `53.74% Util`
+    - `E0 second 3x3 stride-1`: `1,478,894 cycles`, `2.12% Network`, `93.79% Util`
+  - 两层合计 `E0 Network% ≈ 2.81%`，反而略低于原版 `7x7 stride-2` 的 `3.10%`
+  - 这一步基本把问题进一步收窄为：当前翻车的关键矛盾不只是“E0 上多一层卷积”，而更像是“E0 上的 dilation 路径不划算”
+- Files created/modified:
+  - `tools/model_export/optical_flow_144x192/run_sram_test_bilinear.py`
+  - `tools/model_export/optical_flow_144x192/network/MultiScaleResNet_bilinear_globalgate4x_bneckeca_stemdilate.py`
+  - `tools/model_export/optical_flow_144x192/network/MultiScaleResNet_bilinear_globalgate4x_bneckeca_stempostdilate.py`
+  - `tools/model_export/optical_flow_144x192/network/MultiScaleResNet_bilinear_globalgate4x_bneckeca_e0twolayer.py`
+  - `tools/model_export/optical_flow_144x192/output_bilinear_globalgate4x_bneckeca_stemdilate/172x224/*`
+  - `tools/model_export/optical_flow_144x192/output_bilinear_globalgate4x_bneckeca_stempostdilate/172x224/*`
+  - `tools/model_export/optical_flow_144x192/output_bilinear_globalgate4x_bneckeca_e0twolayer/172x224/*`
+  - `plan/model_design/stage-findings-summary-20260331.md`
+  - `plan/model_design/task_plan.md`
+  - `plan/model_design/findings.md`
+  - `plan/model_design/progress.md`
+- Vela 结果确认：
+  - 原版 `globalgate4x_bneckeca`、`stemdilate`、`stempostdilate`、`e0twolayer` 的 `SRAM peak` 都是 `1386.00 KiB`
+  - `stemdilate` 比原版慢约 `24.049 ms`，相对增幅约 `13.77%`
+  - `stempostdilate` 比原版慢约 `15.399 ms`，相对增幅约 `8.82%`
+  - `stempostdilate` 比 `stemdilate` 快约 `8.650 ms`
+  - `e0twolayer` 比原版快约 `0.507 ms`，相对变化约 `-0.29%`
+  - 当前可以确认：`先下采样再空洞` 比 `先空洞再下采样` 更合理，但两者都还没有优于原版 stem；而 `E0` 的 dense 两层 `3x3` 是一个值得保留的真实候选
+
 ## Session: 2026-03-13
 
 ### Phase 1: Requirements & Discovery
@@ -258,12 +339,53 @@
 - 本地验证已完成：
   - `py_compile` 通过
   - 6 个新变体合成 batch dry-run 通过
+
+## Session: 2026-03-17
+
+### Phase 11: Six-Model Training Review & Shortlist Refresh
+
+- **Status:** in_progress
+- Actions taken:
+  - 收集六模型联合训练在 `115 / 135 / 225 / 300 epoch` 的 `FC2 + Sintel` 中期结果
+  - 将六模型结果与既有 `baseline / globalgate4x_bneckeca / globalgate4x_bneckeca_skip8x4x2x` 的历史最佳点做 apples-to-apples 对比
+  - 确认 `globalgate8x4x_bneckeca_skip8x4x` 的 `Sintel-best` 出现在 `epoch 220` (`4.885117`)，而 `FC2-best` 已漂移到 `epoch 290` (`5.001160`)
+  - 确认即便按更严格的 `FC2-best` 口径，它也仍然超过既有 `ablation` 最佳 `5.050387 @ epoch 245` 与旧 `full` 最佳 `5.066905 @ epoch 240`
+  - 确认“`/8 global gate + /4 global gate + /8+/4 skip`”在 searched backbone 上存在真实协同：组合版显著优于对应的 gate-only 和 skip-only 版本
+  - 重新对齐排序后，确认 `globalgate4x_bneckeca_skip8x4x` 与 `globalgate8x4x_bneckeca_skip8x` 都是第二梯队，其中前者在当前 `FC2-best` 口径下略优
+  - 回查 fixed-arch Vela 汇总，补齐主线冠军与稳健对照的部署代价：
+    - `globalgate4x_bneckeca`: `167.551 ms`, `5.968 FPS`
+    - `globalgate8x4x_bneckeca_skip8x4x`: `172.374 ms`, `5.801 FPS`
+  - 确认 `globalgate4x_dual_eca8_bneckeca` 与 `skip8x4x_plain` 当前不值得再优先投入
+  - 更新研究重点：从继续铺开新结构，转向围绕 `globalgate8x4x_bneckeca_skip8x4x` 做收敛
+- Files created/modified:
+  - `plan/model_design/findings.md`
+  - `plan/model_design/task_plan.md`
+  - `plan/model_design/progress.md`
+  - `plan/model_design/fixed-arch-six-model-plan-20260315.md`
   - `172x224` 的 INT8 TFLite + Vela 预检通过
 - Vela 结果确认：
   - 6 个新变体全部保持 `SRAM peak = 1386.00 KiB`
   - hotspot 仍全部是最终 `ResizeBilinear_1`
   - 最快的是 `globalgate4x_dual_eca8_bneckeca (168.445 ms)`
   - 最重的是 `globalgate8x4x_bneckeca_skip8x4x (172.374 ms)`
+
+### Phase 11: English Stage Summary Draft
+
+- **Status:** in_progress
+- Actions taken:
+  - 读取 `task_plan.md`、`findings.md`、`progress.md`、`fixed-arch-training-plan-20260314.md`、`fixed-arch-six-model-plan-20260315.md`
+  - 按用户新要求重组阶段汇报结构，不按时间线写，而按“约束 -> 模块设计 -> 映射关系 -> 部署结果 -> 训练结果 -> 最终结论”组织
+  - 新增英文汇总文档 `stage-summary-model-design-20260317.md`
+  - 在文档中加入 4 张 `mermaid` 图，分别说明：
+    - baseline 与尾部 peak opportunity
+    - skip family
+    - global-gating family
+    - fixed-arch compare 与最终冠军结构
+  - 加入模型名与模块组合映射表，避免导师汇报时只看到命名而看不出结构含义
+  - 加入前期 `Vela + board` 对照表、fixed-arch 训练结果表、six-model leaderboard 结果表
+  - 在 source notes 中区分 deployment artefacts 与 planning-summary-derived training numbers，避免把 planning 汇总误写成原始训练输出
+- Files created/modified:
+  - `plan/model_design/stage-summary-model-design-20260317.md`
 
 ## Error Log
 
@@ -288,6 +410,7 @@
 | 2026-03-13 | 用户进一步要求验证真正同时存在 `1/2 + 1/4 + 1/8` 的多尺度长跳跃 | 1 | 已完成 `skip8x4x` 与 `skip8x4x2x` 对比；结果显示三层同时存在仍不碰峰值，但 `/2` 会把总时延明显拉高 |
 | 2026-03-14 | fixed-arch 三模型第一次 `SavedModel -> TFLite` 导出把 BN train/infer 双分支一起带进图，出现 `OptionalFromValue / FusedBatchNormV3` | 1 | 改为 `from_session` 直接冻结 `input -> final_output` inference graph |
 | 2026-03-14 | fixed-arch 三模型第一次直接把 `/4` 预测 resize 到 full 再累加，触发 Vela 对非 2x `ResizeBilinear` 路径不支持 | 1 | 改回原始 `AccumPreds`：逐级 `2x resize + add` |
+| 2026-03-31 | `globalgate4x_bneckeca_stemdilate` 第一次导出时报 `ConvBNReLUBlock() got an unexpected keyword argument 'name'` | 1 | 去掉 `StemDilatedDownsampleBlock` 中对 `ConvBNReLUBlock` 的 `name` 传参后重跑，成功完成 TFLite + Vela |
 
 ## 5-Question Reboot Check
 

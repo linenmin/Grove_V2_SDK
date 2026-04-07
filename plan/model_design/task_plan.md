@@ -6,7 +6,7 @@
 
 ## Current Phase
 
-Phase 7
+Phase 12
 
 ## Phases
 
@@ -99,8 +99,25 @@ Phase 7
 - [x] 增加 fixed-arch Vela 预检脚本
 - [x] 完成 6 个 variant 的训练图 dry-run
 - [x] 完成 `172x224` 下的 TFLite + Vela 预检
-- [ ] 提交并推送相关代码与计划更新
+- [x] 提交并推送相关代码与计划更新
+- **Status:** complete
+
+### Phase 11: Six-Model Training Review & Shortlist Refresh
+
+- [x] 收集六模型在 `115/135/225/300 epoch` 的 `FC2 + Sintel` 结果
+- [x] 和既有 `ablation/full` 结果做 apples-to-apples 对比
+- [x] 判断是否已经出现明确超过 `ablation` 的新结构
+- [x] 更新冠军模型与次优候选排序
+- [ ] 决定下一轮是单模型复训、三模型联训，还是 checkpoint sweep
 - **Status:** in_progress
+
+### Phase 12: Stem-Dilation Vela Probe
+
+- [x] 参考既有 `progress.md` 方法复用 bilinear 导出脚本
+- [x] 为 `globalgate4x_bneckeca` 增加 `E0/E1` stem-dilation 试验版
+- [x] 用 `172x224 + optimise=Size` 完成原版与试验版的 `Vela` 对照
+- [x] 记录本轮结构假设、编译结果与新增开销位置
+- **Status:** complete
 
 ## Key Questions
 
@@ -133,6 +150,9 @@ Phase 7
 | `globalgate4x_bneckeca_skip2x` 标记为“当前不保留” | 它的高尺度代价最重，在当前基座上已经明显不划算 |
 | `globalgate4x_bneckeca_skip8x4x` 标记为“多尺度训练候选” | 它是当前最接近轻量 U-Net 的多尺度版本，同时保留 `/8` 和 `/4`，且还没有像 `/2` 那样把代价拉爆 |
 | `globalgate4x_bneckeca_skip8x4x2x` 标记为“上限探索版，不进训练优先列表” | 它验证了三层长跳跃同时存在仍不碰峰值，但 `/2` 把总体代价拉高得太明显 |
+| `globalgate4x_bneckeca_stemdilate` 暂不升级为下一阶段候选 | 在“先空洞再下采样”的 `E0/E1` 受控试验下，`SRAM peak` 仍为 `1386.00 KiB`，但 `Vela inference_time` 从 `174.657 ms` 升到 `198.706 ms`，当前部署代价过高 |
+| `globalgate4x_bneckeca_stempostdilate` 比 `stemdilate` 更合理，但仍未优于原版 stem | 在“先下采样再空洞”的 `E0/E1` 受控试验下，`SRAM peak` 仍为 `1386.00 KiB`，`Vela inference_time` 降到 `190.056 ms`，说明把 dilation 放到更低分辨率确实更省，但仍比原版 `7x7/5x5` 慢约 `8.82%` |
+| `E0` 的问题更像是“多插一层高成本 conv 是否划算”，而不只是 dilation 本身 | 新增 `globalgate4x_bneckeca_e0twolayer`（仅把 `E0` 改成 `3x3 stride-2 + 3x3 stride-1`，保留原版 `E1=5x5`）后，`Vela inference_time` 为 `174.150 ms`，与原版 `174.657 ms` 几乎持平，说明 `E0` 上的两层 dense 3x3 并未拖慢部署；此前翻车更像是 `E0 dilation` 本身不划算 |
 | 用户将可接受时延阈值放宽到“小于 20% 即可考虑”后，`globalgate4x_bneckeca_skip8x4x2x` 升级为扩展训练候选 | 该版本的 `182.915 ms` 仍明显落在用户当前可接受区间内，适合保留为多尺度上限参照 |
 | fixed-arch 训练前的 `Vela` 预检统一使用 `172x224` | 必须和前面真实部署验证的输入口径一致，避免训练后再发现部署侧几何/峰值不对齐 |
 | fixed-arch first-round 训练仍保留三模型 joint training | `baseline` 给干净参照，`globalgate4x_bneckeca` 给轻量消融，`globalgate4x_bneckeca_skip8x4x2x` 负责先看 accuracy 上限 |
@@ -143,6 +163,10 @@ Phase 7
 | 六模型主力方向优先押“去掉 `/2 skip` 的更克制多尺度版”和“在 `ablation` 上加 `/8 global gate`” | 当前最强是克制的 `ablation`，说明继续往 `/2` 和高分辨率强路径堆模块不是最优方向 |
 | 六模型代码继续落在 `EdgeFlowNAS/efnas/network/fixed_arch_models.py` | 新变体只是 fixed-subnet 上的结构开关扩展，不值得拆新模型文件体系 |
 | 额外增加 `run_vela_precheck.py` | 这轮以及后续新 variant 都需要固定在 `172x224` 下快速检查 `SRAM peak` 和 `FPS`，复用脚本比临时命令更稳 |
+| 六模型训练后的新冠军升级为 `globalgate8x4x_bneckeca_skip8x4x` | 它在 `epoch 220` 取得 `sintel_epe = 4.885117`，已经明确超过既有 `ablation` 最佳点 |
+| `globalgate8x4x_bneckeca_skip8x` 升级为次优继续候选 | 它比多数新变体稳，但尚未越过 `ablation`，适合作为更轻的 backup |
+| `dualeca8` 与 `skip8x4x_plain` 降级 | 当前结果说明“更多 encoder ECA”与“纯 skip”都不是当前 fixed subnet 上的最佳突破口 |
+| 下一轮重点从继续发散结构切到围绕新冠军做收敛 | 现在已经出现明显领先者，更值得做单模型复训或 checkpoint sweep，而不是继续平均铺开试验 |
 
 ## Errors Encountered
 
@@ -165,6 +189,7 @@ Phase 7
 | 六模型冲榜训练是否应该切到 `8/16` 倍数分辨率以减少 `PAD` 对准确率的影响 | 1 | 当前建议不切；先保持 `172x224` 做结构对比，若后续专门做几何 clean 版本，再单独开 `176x224` 分辨率分支 |
 | 六模型冲榜训练是否需要新写一套训练入口 | 1 | 当前建议不需要；继续扩展现有 `fixed_arch_compare` 入口，并通过 `--model_variants/--model_names` 支持多模型与单模型训练 |
 | 六模型实现后是否都满足当前部署侧约束 | 1 | 已完成 `172x224` Vela 预检；6 个新变体全部保持 `SRAM peak = 1386.00 KiB`，热点仍为最终 `ResizeBilinear_1` |
+| `globalgate4x_bneckeca_stemdilate` 第一次导出失败 | 1 | `StemDilatedDownsampleBlock` 内误给 `ConvBNReLUBlock` 传入 `name`；移除该参数后重新导出并成功完成 `Vela` 编译 |
 
 ## Notes
 

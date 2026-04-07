@@ -249,3 +249,86 @@
 若出现这种情况，当前结论基本可以收敛为：
 
 - `globalgate4x_bneckeca` 就是当前 fixed-subnet 下最优的工程折中点
+
+---
+
+## Training Outcome Update (2026-03-17)
+
+六模型联合训练的中期结果已经把层级关系拉开，当前不再是“六个都值得继续平均投入”。
+
+### Current Winner
+
+- `globalgate8x4x_bneckeca_skip8x4x`
+  - `Sintel-best`: `epoch 220`, `fc2_val_epe = 3.377636`, `sintel_epe = 4.885117`
+  - `FC2-best`: `epoch 290`, `fc2_val_epe = 3.239666`, `sintel_epe = 5.001160`
+
+这是当前 first-round six-model 里最重要的结果，因为即便按更严格的 `FC2-best` 口径，它也仍然超过既有：
+
+- `globalgate4x_bneckeca` 最佳 `sintel_epe = 5.050387 @ epoch 245`
+- `globalgate4x_bneckeca_skip8x4x2x` 最佳 `sintel_epe = 5.066905 @ epoch 240`
+
+也就是说，这一轮第一次证明了：
+
+- **在当前 searched backbone 上，`/8 global gate` 不是噪声，它和 `/4 global gate + /8+/4 skip` 组合后形成了真实收益。**
+
+### What The Results Mean
+
+1. `globalgate8x4x_bneckeca_skip8x4x` 仍然优于：
+   - `globalgate8x4x_bneckeca`
+   - `globalgate4x_bneckeca_skip8x4x`
+   - `skip8x4x`
+
+这说明最强点不是“更多 skip”本身，也不是“更多 gate”本身，而是：
+
+- **早期全局引导 + 克制的双尺度 skip**
+
+2. `globalgate8x4x_bneckeca_skip8x` 是轻量次优项：
+   - `epoch 220`
+   - `fc2_val_epe = 3.304677`
+   - `sintel_epe = 5.094666`
+
+它已经很接近 `ablation`，但还没有稳定越线。它适合作为更轻的 backup，而不是当前主冠军。
+
+3. `globalgate4x_dual_eca8_bneckeca` 暂时不成立：
+   - `epoch 115`: `5.382128`
+   - `epoch 130`: `5.692687`
+   - `epoch 225`: `5.233747`
+
+这条线没有证明 encoder `/8 ECA` 在当前 backbone 上能带来稳定跨域收益。
+
+4. `skip8x4x_plain` 证明“纯 skip 派”不是当前最佳解释：
+   - `epoch 210`
+   - `sintel_epe = 5.472599`
+
+它显著弱于带双 gate 的组合版，因此当前最强收益不是“U-Net skip 自己赢了”，而是 gate 与 skip 的协同赢了。
+
+### Refreshed Ranking
+
+当前六模型训练后的排序建议：
+
+1. `globalgate8x4x_bneckeca_skip8x4x`
+2. `globalgate4x_bneckeca`
+3. `globalgate4x_bneckeca_skip8x4x`
+4. `globalgate8x4x_bneckeca_skip8x`
+5. `globalgate8x4x_bneckeca`
+6. `globalgate4x_dual_eca8_bneckeca`
+7. `skip8x4x`
+
+### Updated Recommendation
+
+下一轮不建议继续平均铺开结构。
+
+更合理的是围绕当前冠军收敛：
+
+1. 优先对 `globalgate8x4x_bneckeca_skip8x4x` 做单模型复训或更密的 checkpoint sweep
+2. 用 `globalgate4x_bneckeca` 作为稳健对照，用 `globalgate8x4x_bneckeca_skip8x` 作为轻量 backup
+3. 暂时停止在 `dualeca8` 和 `plain skip` 上继续投入
+
+### Deployment Cost Reminder
+
+当前两条最值得继续投入的主线，在 `172x224` 下的 fixed-arch Vela 代价是：
+
+- `globalgate4x_bneckeca`: `167.551 ms`, `5.968 FPS`, `1386.00 KiB`
+- `globalgate8x4x_bneckeca_skip8x4x`: `172.374 ms`, `5.801 FPS`, `1386.00 KiB`
+
+也就是说，新冠军相对既有 `ablation` 的部署代价只增加约 `4.823 ms`，而且 `SRAM peak` 完全不变，这个代价是值得的。

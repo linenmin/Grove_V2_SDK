@@ -228,6 +228,113 @@
   - `globalgate4x_bneckeca_skip8x4x`
   - `globalgate8x4x_bneckeca`
   - `globalgate8x4x_bneckeca_skip8x`
+- 六模型联合训练结果在 `300 epoch` 口径下已经足够收敛，不再是“都差不多”：
+  - `globalgate8x4x_bneckeca_skip8x4x` 的当前 `FC2-best` checkpoint 出现在 `epoch 290`，对应 `fc2_val_epe = 3.239666`、`sintel_epe = 5.001160`。
+  - 对照旧三模型：
+    - `ablation/globalgate4x_bneckeca`: `sintel_epe = 5.050387 @ epoch 245`
+    - `full/globalgate4x_bneckeca_skip8x4x2x`: `sintel_epe = 5.066905 @ epoch 240`
+  - 这说明即便按更严格的“训练到后期后的 FC2-best checkpoint”口径，`globalgate8x4x_bneckeca_skip8x4x` 仍然是当前最佳新结构。
+  - 相比 `ablation` 的绝对提升约 `0.0492`，相比旧 `full` 的绝对提升约 `0.0657`；优势不是断层式，但已经稳定成立。
+- 同时，`globalgate8x4x_bneckeca_skip8x4x` 的 `Sintel-best` 点明显早于它的 `FC2-best` 点：
+  - `epoch 220`: `sintel_epe = 4.885117`
+  - `epoch 290`: `sintel_epe = 5.001160`
+  - 这进一步确认：当前最强模型存在明显的 `FC2-best != Sintel-best` 错位，不能把后期 `best.ckpt` 的轻微回退误读成结构失败。
+- 六模型结果表明，“更强的早期全局引导 + 克制的双尺度 skip”是成立的：
+  - 单独的 `globalgate8x4x_bneckeca` 到 `epoch 210` 只有 `sintel_epe = 5.134752`，没有超过 `ablation`。
+  - 单独的 `globalgate4x_bneckeca_skip8x4x` 到 `epoch 220` 是 `sintel_epe = 5.207406`，同样没有超过 `ablation`。
+  - 但两者组合成 `globalgate8x4x_bneckeca_skip8x4x` 后，在 `epoch 220` 达到 `4.885117`，并在 `epoch 290` 的 `FC2-best` 口径下仍保有 `5.001160`，说明 `/8 global gate` 与 `/8+/4 skip` 在这个 searched backbone 上存在真实协同，而不是简单叠加代价。
+- `globalgate8x4x_bneckeca_skip8x` 证明 `/8 gate + /8 skip` 是一个稳定的轻量升级，但当前还不够强：
+  - 它在 `epoch 220` 达到 `sintel_epe = 5.094666`，已经优于纯 `gate8x4x` 和多数其他新变体，但仍略弱于既有 `ablation` 最佳点。
+  - 这说明只补 `/8` 信息回流还不足以稳定越过冠军线，`/4` 级别的信息回流仍然重要。
+- `globalgate4x_dual_eca8_bneckeca` 当前不值得继续优先投入：
+  - `epoch 115` 时 `sintel_epe = 5.382128`
+  - `epoch 130` 甚至回退到 `5.692687`
+  - `epoch 225` 也只有 `5.233747`
+  - 这说明 encoder `/8` 额外 ECA 没有形成预期中的“源头净化”收益，至少在当前 fixed subnet 上不成立。
+- `skip8x4x_plain` 的结果说明“纯 skip 派”不足以解释当前最强收益：
+  - `epoch 210` 只有 `sintel_epe = 5.472599`
+  - 明显弱于 `globalgate8x4x_bneckeca_skip8x4x`，也弱于 `ablation`
+  - 因而当前最强结果不是“U-Net skip 自己赢了”，而是“global gate 与 skip 的组合赢了”。
+- 当前新的排序已经可以更新为：
+  1. `globalgate8x4x_bneckeca_skip8x4x`（当前最佳；`FC2-best Sintel = 5.001160`，`Sintel-best = 4.885117`）
+  2. `globalgate4x_bneckeca`（既有稳健冠军；`Sintel-best = 5.050387`）
+ - 新增了一次仅看部署侧的 stem 试验：以 `globalgate4x_bneckeca` 为基座，不改 `bottleneck ECA` 与 `/4 global gate`，只把 `E0/E1` 改成“先空洞再下采样”的受控版本。
+ - 这次试验版的具体写法是：
+   - `E0`: `3x3 dilated conv(rate=3)`，再接 `3x3 stride-2 conv`
+   - `E1`: `3x3 dilated conv(rate=2)`，再接 `3x3 stride-2 conv`
+ - 该试验版在 `172x224 + optimise=Size` 下可以正常完成 `TFLite -> Vela` 编译。
+ - 编译结果显示，它没有改变当前部署瓶颈的位置：
+   - `SRAM peak` 仍为 `1386.00 KiB`
+   - hotspot 仍为最终 `ResizeBilinear_1`
+ - 但它显著拉高了 Vela 预估时延：
+   - 原版 `globalgate4x_bneckeca`: `174.657 ms`
+   - stem-dilate 试验版: `198.706 ms`
+   - 相对增加约 `13.77%`
+ - 新增代价并不来自尾部 resize，而主要来自前两层新增的 stem dilated conv：
+   - `E0_stemdilate_dilated`: `8,202,299 cycles`, `10.32% Network`
+   - `E1_stemdilate_dilated`: `2,840,072 cycles`, `3.57% Network`
+- 该试验版的 `Off-chip Flash` 也从原版 `2813.94 KiB` 小幅升到 `2822.53 KiB`。
+- 现阶段可以确认的事实是：
+  - 在当前这版“先空洞再下采样”的实现下，`E0/E1` 引入 dilation 不会打穿 `SRAM peak`
+  - 但会明显增加前端卷积成本
+  - 因此它暂时不能直接作为下一阶段默认候选，只能说明“stem dilation 是可编译的，但当前具体实现的代价不低”
+- 随后又补做了第二个受控对照版本：同样以 `globalgate4x_bneckeca` 为基座，不改 `bottleneck ECA` 与 `/4 global gate`，只把 `E0/E1` 改成“先下采样，再空洞”的版本。
+- 这次试验版的具体写法是：
+  - `E0`: `3x3 stride-2 conv`，再接 `3x3 dilated conv(rate=3)`
+  - `E1`: `3x3 stride-2 conv`，再接 `3x3 dilated conv(rate=2)`
+- 该版本同样可以正常完成 `TFLite -> Vela` 编译。
+- 编译结果显示：
+  - `SRAM peak` 仍为 `1386.00 KiB`
+  - hotspot 仍为最终 `ResizeBilinear_1`
+  - `Vela inference_time = 190.056 ms`
+  - `Off-chip Flash = 2826.62 KiB`
+- 它仍慢于原版 `globalgate4x_bneckeca` 的 `174.657 ms`，但明显好于“先空洞再下采样”的 `198.706 ms`。
+- 该版本相对原版的时延增幅约 `8.82%`，相对“先空洞再下采样”快约 `8.650 ms`。
+- `stempostdilate` 的新增代价也主要集中在前两层的 dilated conv：
+  - `E0_stempostdilate_dilated`: `7,730,532 cycles`, `10.17% Network`
+  - `E1_stempostdilate_dilated`: `1,421,960 cycles`, `1.87% Network`
+- 这一组对照目前支持的事实判断是：
+  - 把 dilation 放到下采样后，确实比放在 full-resolution 上更省
+  - 但当前两种 dilation stem 都没有优于原版 `7x7/5x5` stem
+  - 因此如果下一阶段要把 stem 纳入搜索空间，可以保留“post-dilation 比 pre-dilation 更合理”这个倾向，但不能把 dilation stem 预设为必然更快的选择
+- 为了进一步区分“问题是 dilation 本身，还是 E0 上额外增加一层卷积本身”，又补做了一个只改 `E0` 的 dense 两层对照版。
+- 这个版本保持：
+  - `E1` 仍为原版 `5x5 stride-2`
+  - `bottleneck ECA` 与 `/4 global gate` 不变
+  - 只把 `E0` 从原版 `7x7 stride-2` 改成 `3x3 stride-2 + 3x3 stride-1`
+- 该版本同样可以正常完成 `TFLite -> Vela` 编译。
+- 编译结果显示：
+  - `SRAM peak = 1386.00 KiB`
+  - hotspot 仍为最终 `ResizeBilinear_1`
+  - `Vela inference_time = 174.150 ms`
+  - `Off-chip Flash = 2814.94 KiB`
+- 对比原版 `globalgate4x_bneckeca` 的 `174.657 ms`，这个 `E0 two-layer dense` 版本没有变慢，反而略快约 `0.507 ms`；虽然差距很小，但至少说明“E0 上多插一层标准 3x3”本身并不会像前两种 dilation 方案那样明显伤害部署时延。
+- 该版本的 `E0` 两层指标为：
+  - `first 3x3 stride-2`: `483,904 cycles`, `0.69% Network`, `53.74% Util`
+  - `second 3x3 stride-1`: `1,478,894 cycles`, `2.12% Network`, `93.79% Util`
+- 两层合计后，`E0 Network% ≈ 2.81%`，反而略低于原版 `7x7 stride-2` 的 `3.10%`。
+- 这一条新证据非常重要，因为它把当前结论进一步收窄为：
+  - 现阶段不能说 “E0 上两层小卷积一定不如 7x7”
+  - 更合理的说法是：`E0 dilation` 这条路当前不划算，而 `E0 dense two-layer 3x3` 仍然是值得保留到下一阶段搜索空间里的候选
+  3. `globalgate4x_bneckeca_skip8x4x`（`5.078147`）
+  4. `globalgate8x4x_bneckeca_skip8x`（`5.085042`）
+  5. `globalgate8x4x_bneckeca`（`5.309255`）
+  6. `globalgate4x_dual_eca8_bneckeca`（`5.243410`）
+  7. `skip8x4x_plain`（`5.445220`）
+- FC2 与 Sintel 的错位在这轮仍然存在，而且在最佳新模型上体现得更明显：
+  - `globalgate8x4x_bneckeca_skip8x4x` 在 `epoch 220` 的 `Sintel` 最好，但它的 `FC2-best` checkpoint 已经漂移到 `epoch 290`。
+  - 这说明当前 top variant 更像“存在更好的跨域 stopping point”，而不是“FC2 持续下降就一定带来更好的 Sintel”。
+  - 因此后续如果要拿最终部署冠军，应该保留 `FC2-best` 训练准则不变，但在训练后对 top model 做 checkpoint sweep，单独找 `Sintel-best` 参考点。
+- 从部署代价角度，当前最值得对照的两条主线已经很清楚：
+  - `globalgate4x_bneckeca`: `167.551 ms`, `5.968 FPS`, `1386.00 KiB`
+  - `globalgate8x4x_bneckeca_skip8x4x`: `172.374 ms`, `5.801 FPS`, `1386.00 KiB`
+- 这意味着当前新冠军相对既有 `ablation` 的部署代价只增加约 `4.823 ms`，FPS 约下降 `0.167`，但它在 `Sintel` 上已经实现了稳定小胜；这一点足以支撑它进入下一轮单模型复训/微调主线。
+- 基于当前六模型结果，后续资源不应再平均分给所有门控/skip 想法，而应收敛到两条：
+  - 主线：`globalgate8x4x_bneckeca_skip8x4x`
+  - 次线：`globalgate8x4x_bneckeca_skip8x`
+- 当前不建议再优先尝试“更多 ECA”或“更多高分辨率 gate”：
+  - 现有证据说明真正有效的是“更好的多尺度引导组合”，不是把 attention 叠得更满。
+  - `/2` 路径仍然是最可疑、最容易伤泛化的方向。
 
 ## Technical Decisions
 
@@ -325,6 +432,12 @@
   `/home/enmin/MCUFlowNet/EdgeFlowNAS/outputs/fixed_arch_vela_compare/172x224/globalgate4x_bneckeca/vela`
 - fixed-arch `globalgate4x_bneckeca_skip8x4x2x` Vela dir:
   `/home/enmin/MCUFlowNet/EdgeFlowNAS/outputs/fixed_arch_vela_compare/172x224/globalgate4x_bneckeca_skip8x4x2x/vela`
+- `globalgate4x_bneckeca_stemdilate` Vela dir:
+  `/home/enmin/Seeed_Grove_Vision_AI_Module_V2/tools/model_export/optical_flow_144x192/output_bilinear_globalgate4x_bneckeca_stemdilate/172x224`
+- `globalgate4x_bneckeca_stempostdilate` Vela dir:
+  `/home/enmin/Seeed_Grove_Vision_AI_Module_V2/tools/model_export/optical_flow_144x192/output_bilinear_globalgate4x_bneckeca_stempostdilate/172x224`
+- `globalgate4x_bneckeca_e0twolayer` Vela dir:
+  `/home/enmin/Seeed_Grove_Vision_AI_Module_V2/tools/model_export/optical_flow_144x192/output_bilinear_globalgate4x_bneckeca_e0twolayer/172x224`
 - supported ops copy:
   `/home/enmin/Seeed_Grove_Vision_AI_Module_V2/tools/model_export/optical_flow_144x192/vela/SUPPORTED_OPS.md`
 

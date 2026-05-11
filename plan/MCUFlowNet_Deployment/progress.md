@@ -6,13 +6,19 @@
 
 ## Next Action
 
-**用户确认排查结论后选路径**
+**BN recal 失败（见 findings §7e1）。需要真 fine-tune。**
 
-排查结果（findings.md §7d/7e）：v3 的"HPC win"在 deploy res 萎缩主因是**训练 (480×640) / 部署 (157×203) input size mismatch**，不是量化。三条候选路径：
+下一步进 EdgeFlowNAS 仓库立项 fine-tune 计划：
 
-1. **零成本立刻试**：把 v3_efn_fps export 到 172×224 input，跑 EPE 看 Δ_downsample 是否缩小
-2. **彻底解**：重训 v3 在 157×203 (或 172×224) input
-3. **接受现状**：烧 v3_efn_fps INT8 @ 157×203 上板（EPE 7.34 < mainline 7.79）继续 M3
+1. 在 `D:\Dataset\MCUFlowNet\EdgeFlowNAS\plan\` 下新建一个文件夹（如 `retrain_v3_finetune_157x203` 或类似命名）
+2. 用 `pi-planning-with-files` skill 写 task_plan.md / findings.md / progress.md
+3. 然后再在 `efnas/` 里落地 fine-tune 代码 + slurm 脚本：
+   - 起点 ckpt：每个子网的 sintel_best.ckpt
+   - 数据：FT3D @ 157×203（避免 Sintel train pass 间 leakage）
+   - LR 1e-6 ~ 1e-5，epoch 5-20，关 / 缩 spatial aug
+   - mainline 同步 fine-tune（把 MultiScaleResNet 包成 FixedArchModelMainline 接进 efnas 框架，复用 retrain_v3_trainer）
+
+待用户拍板"开始写 fine-tune 计划"后进 EdgeFlowNAS。
 
 ---
 
@@ -39,6 +45,28 @@
 4. 如果可视化正常 → M2 部署完成；如果颜色偏暗/偏亮 → 调渲染系数
 
 （可选）放大 input 至 172×224 等用 v3 SRAM 余量 + 重跑 EPE 看能否再降。
+
+---
+
+## 2026-05-11 — Session 7
+
+**BN recalibration 实验：失败**
+
+试图免训练 fix v3 在 deploy res 的 OOD：写 `tools/bn_recal/run_bn_recal_v3.py`，把 v3_efn_fps sintel_best.ckpt 的 BN 在 Sintel train clean 157×203 数据上 is_training=True 跑 forward + UPDATE_OPS 刷新 running stats，conv 权重不动。
+
+| 配置 | BN moving_mean Δ | FP32 EPE @ 157×203 | INT8 EPE @ 157×203 |
+|---|---:|---:|---:|
+| 原 sintel_best.ckpt | 0 | 7.75 | 7.34 |
+| BN recal 500×bs4 | 0.39 | **19.46 ⛔** | **17.31 ⛔** |
+| BN recal 50×bs16 (gentler) | 0.38 | **22.93 ⛔** | — |
+
+**为什么失败**：v3 模型的 conv 权重和**原始** BN running stats 一起训出来；conv 学到的是"已被这套 mean/var 归一化"的特征。单独把 BN running stats 替换成 deploy 域的统计，conv 看见的特征就跑到没训过的区域 → 性能崩盘。
+
+**结论**：BN recal 在这个 OOD 程度下不适用。要 fix 必须 fine-tune（conv 跟 BN 一起更新）。失败 ckpt 已删除。
+
+实验代码 `tools/bn_recal/run_bn_recal_v3.py` 保留作 anti-pattern 参考；findings §7e1 补完整记录。
+
+**当前阶段**：M2 Phase 3 卡在 deploy res OOD。等用户拍板进 fine-tune 路线（去 EdgeFlowNAS plan/ 立项）或接受 v3_efn_fps 0.45 EPE 微胜直接烧上板。
 
 ---
 
@@ -212,6 +240,9 @@
 | 2026-05-11 R17 | M2 v3_acc | **FP32** (test_sintel, 157×203 in) | train final | 1041 | **8.2704** / 4.8348 | Δ_downsample +3.18, Δ_pure_quant +0.13 |
 | 2026-05-11 R18 | M2 v3_efn_fps | **FP32** (test_sintel, 157×203 in) | train final | 1041 | **7.7501** / 3.4975 | Δ_downsample +2.86, Δ_pure_quant −0.41 (noise) |
 | 2026-05-11 R19 | M2 v3_light | **FP32** (test_sintel, 157×203 in) | train final | 1041 | **10.5953** / 7.7511 | Δ_downsample +5.02, **Δ_pure_quant +2.13 ⚠** v3_light PTQ 异常 |
+| 2026-05-11 R20 | M2 v3_efn_fps + BN_recal(500×bs4) | INT8 (test_sintel, 157×203 in) | train final | 1041 | **17.3062** / 7.4878 | **BN recal FAILED**（vs R14 +9.97）|
+| 2026-05-11 R21 | M2 v3_efn_fps + BN_recal(500×bs4) | **FP32** (test_sintel, 157×203 in) | train final | 1041 | **19.4574** / 7.0961 | FP32 也崩，证明不是量化问题，conv 权重和原 BN stats 绑死 |
+| 2026-05-11 R22 | M2 v3_efn_fps + BN_recal(50×bs16 gentle) | FP32 (test_sintel, 157×203 in) | train final | 1041 | **22.9259** / 11.0521 | 更温和也救不回来；BN recal 不适用此 OOD 程度 |
 
 ---
 
@@ -252,6 +283,7 @@
 | `plan/MCUFlowNet_Deployment/m2_v3_acc_fp32_157x203_test_sintel.json` | created | 3 | FP32 v3_acc @ 157x203, EPE 8.27 |
 | `plan/MCUFlowNet_Deployment/m2_v3_efn_fps_fp32_157x203_test_sintel.json` | created | 3 | FP32 v3_efn_fps @ 157x203, EPE 7.75 |
 | `plan/MCUFlowNet_Deployment/m2_v3_light_fp32_157x203_test_sintel.json` | created | 3 | FP32 v3_light @ 157x203, EPE 10.60 |
+| `tools/bn_recal/run_bn_recal_v3.py` | created | 3 | BN recal experiment script (kept as anti-pattern; experiment FAILED) |
 
 ---
 

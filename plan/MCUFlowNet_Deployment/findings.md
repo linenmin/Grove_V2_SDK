@@ -149,17 +149,30 @@ evaluator 加了 `--flow-scale` 参数（默认 1.0；对 v3 子网用 12.5）�
 
 **用户怀疑成立**：v3 的 HPC win (mainline 6.31 vs v3_efn_fps 4.89 = +1.42) 在 deploy res (157×203) 萎缩到 +0.45 EPE，主因是训练/部署 input 尺寸不匹配。
 
+## 7e1. BN recalibration 实验（**失败**，记录留作 anti-pattern）
+
+试图用 BN running-stats 重估 fix 157×203 OOD，没花训练时间但失败：
+
+- 工具：`tools/bn_recal/run_bn_recal_v3.py`，把 sintel_best.ckpt 的 BN 设 is_training=True，在 Sintel train **clean** 157×203 数据上 forward + 拿 UPDATE_OPS 更新 running_mean / running_var，conv 权重不动
+- v3_efn_fps 试两轮：
+  - 500 batches × bs=4：BN moving_mean abs-mean 从 0.37 → 0.76（shift 0.39），FP32 EPE 7.75 → **19.46** ⛔ 大幅退化
+  - 50 batches × bs=16（更温和）：FP32 EPE → **22.93** ⛔ 更差
+- 失败原因：v3 模型 conv 权重和**原始** BN stats 绑死（训练时 BN 参与梯度反传，conv 学到的是"已减掉这套 mean / 除以这套 var"的特征）。单独把 BN running stats 替换成"deploy 域统计"，相当于把 conv 看见的特征推到没训练过的区域 → 性能崩盘
+- **结论**：deploy res OOD 不是简单的"BN 统计漂移"问题，conv 权重本身需要适配。要 fix 必须 fine-tune（让 conv 跟 BN 一起更新）
+
+失败 ckpt 已删除（避免污染 EdgeFlowNAS outputs 目录），实验日志留在本节作 anti-pattern 参考。
+
 ## 7e. M2 路径修复候选（按 ROI 重排）
 
-1. **放大 input 至 ≥172×224**（不重训也能立刻试，零成本）
-   - v3 Vela peak 1143 KiB，arena 1432 KiB，余 287 KiB → 直接换分辨率
-   - 预期：Δ_downsample 缩小，v3 优势恢复一部分
-   - 但板端 prev buffer 在 arena 外，要重新核算 SRAM 总盘
-2. **重训 v3 在 157×203 (或 172×224) input**
-   - 完全消除 train/deploy input size mismatch
-   - 成本最高（HPC 再跑一轮），但是最干净的解
-3. **解 v3_light 的 PTQ 异常**：尝试 per-channel weight + per-tensor activation 量化，或 QAT 短训
-4. **接受现状 v3_efn_fps 0.45 微胜**，烧上板进 M3
+1. ~~**BN recalibration**~~ — 已试，**失败**（见 7e1）
+2. **Fine-tune v3 在 157×203 input from sintel_best.ckpt**（用户提议；进 EdgeFlowNAS plan/<新文件夹>/ 用 pi-planning 立项）
+   - 数据：FT3D（避免 Sintel train pass 之间 leakage）
+   - 起点：sintel_best.ckpt，少量 epoch (5-20)，低 LR (1e-6 ~ 1e-5)
+   - 关 / 缩小 spatial aug（min_scale, stretch, eraser 等在 157×203 下扰动幅度不合适）
+   - 同步 mainline fine-tune 保证公平对照
+3. **接受现状 v3_efn_fps INT8 7.34 微胜 mainline 7.79**，烧上板进 M3
+4. （次）放大 input 至 172×224 — 跟用户讨论后**搁置**（无法和 mainline 在同一分辨率公平对比）
+5. （次）解 v3_light PTQ 异常 (+2.13)：per-channel weight quant 或 QAT 短训
 
 ## 7c. M2 下一步候选
 

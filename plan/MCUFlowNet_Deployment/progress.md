@@ -6,7 +6,17 @@
 
 ## Next Action
 
-**烧 v3_efn_fps 到板上，看实时光流是否正常**
+**用户确认排查结论后选路径**
+
+排查结果（findings.md §7d/7e）：v3 的"HPC win"在 deploy res 萎缩主因是**训练 (480×640) / 部署 (157×203) input size mismatch**，不是量化。三条候选路径：
+
+1. **零成本立刻试**：把 v3_efn_fps export 到 172×224 input，跑 EPE 看 Δ_downsample 是否缩小
+2. **彻底解**：重训 v3 在 157×203 (或 172×224) input
+3. **接受现状**：烧 v3_efn_fps INT8 @ 157×203 上板（EPE 7.34 < mainline 7.79）继续 M3
+
+---
+
+**原 Next Action：烧 v3_efn_fps 到板上，看实时光流是否正常**
 
 修复 `flow_scale=12.5` bug 后，**v3_efn_fps EPE 7.34 < mainline 7.79**，且推理时间 165ms < 188ms。是当前最佳板端候选。
 
@@ -29,6 +39,37 @@
 4. 如果可视化正常 → M2 部署完成；如果颜色偏暗/偏亮 → 调渲染系数
 
 （可选）放大 input 至 172×224 等用 v3 SRAM 余量 + 重跑 EPE 看能否再降。
+
+---
+
+## 2026-05-11 — Session 6
+
+**用户怀疑 v3 在 deploy res 优势消失"不对"，要求排查。结论**：
+
+跑 FP32 v3 在 157×203 (`tools/eval/fp32_v3_sintel_eval.py`) 与 INT8 v3 在 157×203 对照，外加 v3_acc FP32 @ 416×1024 (5.0898) sanity check 验证我的 evaluator 没毛病：
+
+| Model | FP32 @ 416×1024 | FP32 @ 157×203 | INT8 @ 157×203 | Δ_downsample | Δ_pure_quant |
+|---|---:|---:|---:|---:|---:|
+| Mainline | 6.31 | 7.71 | 7.79 | +1.40 | +0.08 |
+| v3_acc | 5.09 | 8.27 | 8.40 | +3.18 | +0.13 |
+| v3_efn_fps | 4.89 | 7.75 | 7.34 | +2.86 | −0.41 (noise) |
+| v3_light | 5.58 | 10.60 | 12.73 | +5.02 | **+2.13 ⚠** |
+
+**结论 1**：v3 架构对 input 降分辨率敏感 2-3.6× more than mainline。v3 训练在 480×640，强制 157×203 是 OOD。Mainline 网络结构（无 ECA / global gate / 大量 bilinear ResizeConv）对 input scale 更鲁棒。
+**结论 2**：PTQ INT8 在 v3_acc / v3_efn_fps 几乎无损 (Δ ≤ 0.5)，**但在 v3_light 上 +2.13 EPE 异常**（最轻架构通道少，per-tensor INT8 把仅剩精度也丢了）。
+**结论 3**：用户怀疑成立 — HPC v3_efn_fps win mainline +1.42 EPE，在 deploy res 萎缩到 +0.45。主因 train/deploy input size mismatch。
+
+**完成**：
+- 写 `tools/eval/fp32_v3_sintel_eval.py`，同 pipeline 跑 v3 FP32 比较
+- v3_acc FP32 @ 416×1024 sanity: 我的 evaluator 跑出 5.0898 — 与 HPC's 完全一致 ✅
+- 3 个 v3 子网 FP32 @ 157×203 完成
+- findings.md §7d/7e 写诊断 + 路径修复 4 个候选
+- progress.md R16-R19 新增
+
+**待决策**（progress.md Next Action）：
+1. 零成本试：v3 @ 172×224 看 Δ_downsample 是否缩
+2. 彻底解：重训 v3 在 ~157×203 input（HPC 新一轮）
+3. 接受现状：烧 v3_efn_fps @ 157×203 上板继续 M3
 
 ---
 
@@ -167,6 +208,10 @@
 | 2026-05-11 R13 | M2 v3_acc | INT8 (test_sintel, 157×203 in, flow_scale=12.5) | train final | 1041 | **8.3963** / 5.3634 | Δ vs mainline-INT8 +0.60 |
 | 2026-05-11 R14 | **M2 v3_efn_fps** | INT8 (test_sintel, 157×203 in, flow_scale=12.5) | train final | 1041 | **7.3354 / 3.7575** | **Δ vs mainline-INT8 −0.45 → WIN**，165 ms inf |
 | 2026-05-11 R15 | M2 v3_light | INT8 (test_sintel, 157×203 in, flow_scale=12.5) | train final | 1041 | **12.7268** / 11.0980 | Δ vs mainline-INT8 +4.94，最轻架构降分辨率敏感 |
+| 2026-05-11 R16 | M2 v3_acc | **FP32** (test_sintel, 416×1024 in, flow_scale=12.5) | train final | 1041 | **5.0898** / 1.3641 | sanity vs HPC — match perfectly |
+| 2026-05-11 R17 | M2 v3_acc | **FP32** (test_sintel, 157×203 in) | train final | 1041 | **8.2704** / 4.8348 | Δ_downsample +3.18, Δ_pure_quant +0.13 |
+| 2026-05-11 R18 | M2 v3_efn_fps | **FP32** (test_sintel, 157×203 in) | train final | 1041 | **7.7501** / 3.4975 | Δ_downsample +2.86, Δ_pure_quant −0.41 (noise) |
+| 2026-05-11 R19 | M2 v3_light | **FP32** (test_sintel, 157×203 in) | train final | 1041 | **10.5953** / 7.7511 | Δ_downsample +5.02, **Δ_pure_quant +2.13 ⚠** v3_light PTQ 异常 |
 
 ---
 
@@ -203,6 +248,10 @@
 | `plan/MCUFlowNet_Deployment/m2_v3_acc_sintel_final_test_sintel_s125.json` | created | 3 | EPE 8.40 (corrected, flow_scale=12.5) |
 | `plan/MCUFlowNet_Deployment/m2_v3_efn_fps_sintel_final_test_sintel_s125.json` | created | 3 | EPE 7.34 (corrected) — winner |
 | `plan/MCUFlowNet_Deployment/m2_v3_light_sintel_final_test_sintel_s125.json` | created | 3 | EPE 12.73 (corrected) |
+| `tools/eval/fp32_v3_sintel_eval.py` | created | 3 | FP32 v3 evaluator (same pipeline as INT8 evaluator) |
+| `plan/MCUFlowNet_Deployment/m2_v3_acc_fp32_157x203_test_sintel.json` | created | 3 | FP32 v3_acc @ 157x203, EPE 8.27 |
+| `plan/MCUFlowNet_Deployment/m2_v3_efn_fps_fp32_157x203_test_sintel.json` | created | 3 | FP32 v3_efn_fps @ 157x203, EPE 7.75 |
+| `plan/MCUFlowNet_Deployment/m2_v3_light_fp32_157x203_test_sintel.json` | created | 3 | FP32 v3_light @ 157x203, EPE 10.60 |
 
 ---
 

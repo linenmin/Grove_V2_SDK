@@ -131,6 +131,36 @@ evaluator 加了 `--flow-scale` 参数（默认 1.0；对 v3 子网用 12.5）�
 - Mainline 仍作为 backup；如果 v3_efn_fps 板上有异常再回退
 - v3_acc / v3_light：暂时存档不部署
 
+## 7d. M2 关键 Diagnostic：v3 在 deploy res 下"丢优势"是 input 分辨率，不是量化
+
+用户怀疑"HPC eval 三个 v3 都明显赢 mainline 但板端 157×203 优势消失"，做了 FP32 vs INT8 在 157×203 的对照：
+
+| Model | FP32 @ 416×1024 | FP32 @ 157×203 | INT8 @ 157×203 | Δ_downsample (416→157) | Δ_pure_quant @ 157×203 |
+|---|---:|---:|---:|---:|---:|
+| Mainline | 6.31 | 7.71 | 7.79 | +1.40 | +0.08 |
+| v3_acc | 5.09 | 8.27 | 8.40 | **+3.18** | +0.13 |
+| v3_efn_fps | 4.89 | 7.75 | 7.34 | **+2.86** | −0.41 (eval noise) |
+| v3_light | 5.58 | 10.60 | 12.73 | **+5.02** | **+2.13 ⚠** |
+
+**3 个诊断结论**：
+1. **v3 架构对 input 降分辨率敏感 2~3.6×**：所有 v3 子网 Δ_downsample ≥ +2.86，而 mainline 只有 +1.40。最可能的根因：v3 在 FT3D **480×640** 上训练，强制 157×203 推理 (~3× 下采样) 是 OOD。Mainline 训练 input 416×1024 离 157×203 也远，但 mainline 网络结构（无 ECA / global gate / bilinear ResizeConv-stack 这类依赖空间统计的模块）对 input scale 更鲁棒。
+2. **PTQ INT8 在 v3_acc / v3_efn_fps 几乎无损**（Δ ≤ 0.5）。v3_efn_fps 的 INT8 反而比 FP32 略低 0.41 — 1041 帧统计噪声内。
+3. **PTQ INT8 在 v3_light 上 +2.13 EPE 异常**：最轻架构通道少 → 激活分布瘦、缺余量，per-tensor INT8 量化把仅剩精度也丢了。
+
+**用户怀疑成立**：v3 的 HPC win (mainline 6.31 vs v3_efn_fps 4.89 = +1.42) 在 deploy res (157×203) 萎缩到 +0.45 EPE，主因是训练/部署 input 尺寸不匹配。
+
+## 7e. M2 路径修复候选（按 ROI 重排）
+
+1. **放大 input 至 ≥172×224**（不重训也能立刻试，零成本）
+   - v3 Vela peak 1143 KiB，arena 1432 KiB，余 287 KiB → 直接换分辨率
+   - 预期：Δ_downsample 缩小，v3 优势恢复一部分
+   - 但板端 prev buffer 在 arena 外，要重新核算 SRAM 总盘
+2. **重训 v3 在 157×203 (或 172×224) input**
+   - 完全消除 train/deploy input size mismatch
+   - 成本最高（HPC 再跑一轮），但是最干净的解
+3. **解 v3_light 的 PTQ 异常**：尝试 per-channel weight + per-tensor activation 量化，或 QAT 短训
+4. **接受现状 v3_efn_fps 0.45 微胜**，烧上板进 M3
+
 ## 7c. M2 下一步候选
 
 按预期 ROI 排序：

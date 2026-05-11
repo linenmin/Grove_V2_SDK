@@ -30,11 +30,17 @@ Phase 3（M2 EdgeFlowNAS retrain_v3 子网部署）— M1 Phase 1/2 已闭环，
 ### Phase 3: M2 (EdgeFlowNAS retrain_v3 子网) 部署 — **in_progress**
 - [x] 写 export 脚本 `tools/model_export/edgeflownas_v3/run_export.py`：FixedArchModelV3 graph + 输入归一化 `(x-127.5)/127.5` 烧进 graph + PTQ INT8 + Vela
 - [x] 3 个候选子网 (v3_acc / v3_efn_fps / v3_light) 在 157×203 都成功 INT8+Vela 导出
-- [x] Sintel Final EPE @ 157×203（同 mainline 方法学）：v3_acc 10.66 / v3_efn_fps 10.67 / v3_light 10.93 (vs mainline 7.79)
-- [ ] **决策点**：v3 SRAM peak (1143 KiB) 比 mainline (1430 KiB) 少 287 KiB → 应放大 input 尺寸利用余量，再评估
-  - [ ] 找到 Vela peak 接近 1432 KiB 的最大输入尺寸（试 172×224、200×256 等）
-  - [ ] 重新跑 EPE → 看能否反超 mainline 7.79
-- [ ] 板端烧录最佳 v3 子网 + flow_viewer 验证
+- [x] Sintel Final EPE @ 157×203（同 mainline 方法学）（**第一次有 bug：忘乘 flow_scale=12.5**；修正后真实数字如下）
+  - v3_acc 8.40 (Δ vs mainline-INT8 +0.60)
+  - **v3_efn_fps 7.34 (Δ −0.45 → WIN)**
+  - v3_light 12.73 (Δ +4.94)
+- [x] HPC sintel_best (FP32 @ 416×1024) 复现：v3_acc 5.0898, v3_efn_fps 4.8879, v3_light 5.5819（与 meta.json 一致）
+- [x] INT8 vs HPC FP32 同方法学 Δ_pure_quant 验证（v3_acc @ 416×1024）：+0.16 EPE，量化几乎无损
+- [ ] 烧 v3_efn_fps INT8 @ 157×203 上板
+  - [ ] 复用 `run_optical_pipeline.sh --mode with-model` flash 到 `0xB7B000`
+  - [ ] 检查 `viz_publish.cpp` 的 `mag * 0.05` 渲染系数是否需要按 v3 output scale 调整
+  - [ ] flow_viewer.py 验证可视化正常
+- [ ] （可选）放大 input 用 v3 SRAM 余量进一步降 EPE
 - **Status:** in_progress
 
 ### Phase 4: M3 (第三个模型，TBD) 部署

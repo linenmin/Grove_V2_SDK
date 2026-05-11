@@ -95,32 +95,54 @@
 - evaluator wrapper：`tools/eval/eval_int8_one.sh`（默认 test_sintel mode + Final list）
 - evaluator 新增 `--flow-scale`（默认 1.0；v3 不需要 ×12.5）
 
-## 7b. M2 Phase 3 实验结果（PTQ INT8 @ 157×203, 2026-05-11）
+## 7b. M2 Phase 3 实验结果（PTQ INT8, 2026-05-11）
 
-evaluator：`tools/eval/int8_sintel_eval.py --ref-mode test_sintel`（Sintel Final, 1041 帧, patch 416×1024, clip 50）
+### 关键 bug 修复：必须乘 `flow_scale=12.5`
 
-| Model | Vela SRAM | Vela est. inf (ms) | INT8 avg EPE | INT8 median EPE | Δ vs Mainline (7.79) |
-|---|---:|---:|---:|---:|---:|
-| **Mainline** (transpose-conv) | 1430 KiB | ~188 | **7.7911** | 2.3706 | 0 |
-| v3_acc | 1143 KiB | 189.67 | 10.6637 | 4.1021 | **+2.87** |
-| v3_efn_fps | 1143 KiB | 165.22 | 10.6724 | 4.0929 | +2.88 |
-| v3_light | 1143 KiB | 95.94 | 10.9277 | 4.4540 | +3.14 |
+**第一次跑** 3 个子网 @ 157×203 得到 EPE 10.66/10.67/10.93（远高于 mainline 7.79）。看起来 v3 完败，**但其实是 evaluator bug**：
+
+- 训练时 GT 被 divided by 12.5（`ft3d_flow_divisor=12.5`），模型学到的 output 是 `flow / 12.5` 单位
+- HPC sintel eval 自带 `_scale_prediction_for_sintel_eval(pred, 12.5)` —— 我之前没乘
+- 错误地以为"输入归一化烧进 graph 后就不用乘 12.5 了"，其实输入归一化和输出尺度是独立的两件事
+
+**验证**：HPC 自己的 `evaluate_v3_checkpoint_dir_on_sintel` 在 v3_acc/sintel_best 上跑出 **EPE 5.0898**（与 meta.json `metric` 完全一致）。我把 v3_acc 在 416×1024 input 上 INT8 export，加 `--flow-scale 12.5` 后跑出 **EPE 5.2504**，**Δ_pure_quant = +0.16**，量化几乎无损 ✅
+
+evaluator 加了 `--flow-scale` 参数（默认 1.0；对 v3 子网用 12.5）。
+
+### Sintel Final, 1041 帧, test_sintel mode (patch 416×1024, clip ±50), flow_scale 12.5
+
+| Model | HPC FP32 @ 416×1024 | INT8 @ 416×1024 | INT8 @ 157×203 | Vela SRAM | Vela inf (ms) | Δ_downsample | Δ vs Mainline-INT8 @ 157×203 |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| Mainline (transpose-conv) | 6.3117 | 7.7911 | 7.7911 | 1430 KiB | ~188 | +1.48 (R5→R6) | 0 |
+| v3_acc | 5.0898 | 5.2504 | **8.3963** | 1143 KiB | 189.67 | +3.31 | +0.60 |
+| **v3_efn_fps** | **4.8879** | — | **7.3354** | 1143 KiB | 165.22 | +2.45 | **−0.45 (WIN)** |
+| v3_light | 5.5819 | — | 12.7268 | 1143 KiB | 95.94 | +7.15 | +4.94 |
 
 **观察**：
-- 所有 3 个 v3 子网在 **157×203 input** 下 EPE 都比 mainline 高 +2.87 ~ +3.14
-- Vela SRAM peak 1143 KiB，**比 mainline 少 287 KiB** → 当前 1432 KiB arena 利用率只有 80%，还有 ~287 KiB 余量
-- 推理时间：v3_light (96ms) 比 mainline 快近 2×；v3_acc / v3_efn_fps 接近 mainline
-- **关键假设待验证**：v3 训练在 480×640 (4:3)，强制 157×203 (1:1.3) 推理可能因 aspect ratio 不匹配损精度；v3 真正优势在 SRAM 余量 → 应该**放大 input** (172×224 / 200×256 / …) 充分用满 1432 KiB arena，那才是 v3 的合理部署点。当前数字只是 "同 input size 的对照"
+- **v3_efn_fps INT8 @ 157×203 = 7.34，正面打过 mainline 7.79 (−0.45 EPE / −5.8%)**，并且推理时间 165ms < mainline 188ms。这是 NAS 在板端的真实 win。
+- v3_acc 慢一点（+0.60 EPE），但 latency 跟 mainline 差不多，**没有部署价值**
+- v3_light 在 157×203 下垮掉了 (+4.94 EPE)：可能"最轻"架构对 OOD input scale 鲁棒性差；保留作 latency 极致路线候选（96ms）但精度差距太大
+- Δ_downsample（416×1024 → 157×203）：mainline +1.48，v3_efn_fps +2.45，v3_acc +3.31，v3_light +7.15 → **越轻的 v3 子网越对 input 分辨率降级敏感**
+- Δ_pure_quant（v3_acc 数据）= +0.16 EPE，与 mainline +0.085 同档（PTQ 没事）
+
+### M2 部署决策
+
+- **首选烧 v3_efn_fps INT8 @ 157×203**：EPE 7.34，FPS ~6（vs mainline ~5.3），是当前唯一同时打过 mainline EPE 和 latency 的子网
+- Mainline 仍作为 backup；如果 v3_efn_fps 板上有异常再回退
+- v3_acc / v3_light：暂时存档不部署
 
 ## 7c. M2 下一步候选
 
 按预期 ROI 排序：
 
-1. **放大 input 至 ≥172×224**（v3 SRAM 余量直接换分辨率）
-   - 用 Vela peak 1432 KiB 上限反推最大输入尺寸
-   - 重新跑 export + EPE → 看是否能反超 mainline 7.79
-2. （次选）保留 157×203 但调整 patch 长宽比和 padding 让 v3 在自己训练的 aspect ratio 附近推理（更激进，要改 export pipeline）
-3. （最次）放弃 v3 部署，用 mainline 作为 M2 baseline，只保留 v3 数字作为 NAS 价值对照
+1. **烧 v3_efn_fps 上板验证**（EPE 7.34 < 7.79，已是当前最佳 157×203 候选）
+   - 复用 `run_optical_pipeline.sh --mode with-model` 烧到 `0xB7B000`
+   - flow_viewer.py 看可视化是否正常
+   - **板端可视化注意**：v3 的输出 scale 不是 mainline 的 0.4265；`viz_publish.cpp` 的 `mag * 0.05` 系数可能需要按 v3 output scale * 12.5 ≈ 0.0534 × 12.5 ≈ 0.668 重新校准，否则画面会偏暗或偏亮
+2. **放大 input 至 ≥172×224**（用 v3 的 SRAM 余量换分辨率）
+   - v3 Vela peak 1143 KiB，arena 1432 KiB，余量 287 KiB
+   - 试 172×224、200×256，看 EPE 能否再降
+3. **最轻路线**：保留 v3_light + 进一步缩小 input 到 128×160 等极端尺寸看 latency 极致点（精度差是已知问题）
 
 ## 8. M3：占位
 

@@ -6,22 +6,57 @@
 
 ## Next Action
 
-**放大 v3 input 充分利用 SRAM 余量**
+**烧 v3_efn_fps 到板上，看实时光流是否正常**
 
-V3 子网在 157×203 EPE 普遍比 mainline 差 +2.87 ~ +3.14。但 Vela SRAM peak 只有 1143 KiB（mainline 1430 KiB），还有 287 KiB 余量。要让 V3 体现 NAS 优势，应该放大 input 用满 arena。
+修复 `flow_scale=12.5` bug 后，**v3_efn_fps EPE 7.34 < mainline 7.79**，且推理时间 165ms < 188ms。是当前最佳板端候选。
 
 具体步骤：
-1. 找到 V3 Vela peak ≈ 1432 KiB 的最大 input。试以下尺寸，每个跑 export 看 Vela report：
-   - 172×224 (NSGA-II 训练目标尺寸；预测 peak ~1386 KiB)
-   - 200×256
-   - 220×288
-   - 选 Vela peak < 1432 KiB 且最大的
-2. 在选定尺寸上重跑 3 个子网 (v3_acc / v3_efn_fps / v3_light) 全 Sintel Final EPE
-3. 看是否反超 mainline 的 7.79
-4. 同时检查板端 prev buffer 余量是否足够（当前 `remaining_after_arena=32`，arena 不变；如果 input 放大需要更大 prev buffer，要进 firmware 调整）
-5. 选出 EPE 最低的子网烧到板上，flow_viewer 验证
+1. **检查 viz_publish.cpp 渲染系数**
+   - mainline output scale = 0.4265，渲染 `mag * 0.05` → 等效物理像素 `int8 * 0.4265 * 0.05`
+   - v3_efn_fps 的 output tflite 量化参数要看一下（之前 v3_acc 是 scale 0.054, zp -1，再 ×12.5 才是物理像素）
+   - 板端从 int8 直接读 → 渲染时要按 `int8 * scale * 12.5` 计算 magnitude，再决定 `* 0.05` 还是其他系数
+   - 最保险：让固件能读取 tflite output scale & 12.5 div 然后动态计算渲染系数；或者临时把固件 `mag * 0.05` 改成 `mag * 0.668`（= 0.0534×12.5）然后烧两个版本
+2. **烧 v3_efn_fps INT8 @ 157×203**
+   ```
+   bash .agent/skills/we2-optical-sd-pipeline/scripts/run_optical_pipeline.sh \
+     --mode with-model --app-type optical_cam_oflow \
+     --port /dev/ttyACM0 --skip-build \
+     --capture-seconds 10 --keyword 'initial done' --keyword 'INVOKE' \
+     --extract-frames --max-frames 3 \
+     --model-arg 'model_zoo/optical_flow/edgeflownas_v3/v3_efn_fps/157x203/edgeflownas_v3_efn_fps_157x203_vela.tflite 0xB7B000 0x00000'
+   ```
+3. flow_viewer.py 检查可视化是否正常（光流图，不是相机原图）
+4. 如果可视化正常 → M2 部署完成；如果颜色偏暗/偏亮 → 调渲染系数
 
-如果放大 input 后 v3 仍打不过 mainline，则该轮 NAS 视为没有给出可部署 win，M2 退化为 mainline 平替；可以重启 NAS 搜索 v4。
+（可选）放大 input 至 172×224 等用 v3 SRAM 余量 + 重跑 EPE 看能否再降。
+
+---
+
+## 2026-05-11 — Session 5
+
+**核心 bug 修复**：3 个 v3 子网 EPE 异常高的原因是 evaluator 忘乘 `flow_scale=12.5`（v3 训练时 GT 被 div by 12.5，inference 要乘回来）。修复后：
+
+| Model | INT8 @ 157×203 (修复后) | HPC FP32 @ 416×1024 |
+|---|---:|---:|
+| Mainline | 7.79 | 6.31 |
+| v3_acc | 8.40 | 5.09 |
+| **v3_efn_fps** | **7.34** ← WIN | 4.89 |
+| v3_light | 12.73 | 5.58 |
+
+**v3_efn_fps INT8 @ 157×203 = 7.34，正面超过 mainline 7.79**（−0.45 EPE / −5.8%），且推理 165ms vs mainline 188ms。
+
+**完成**：
+- 写 `probe_v3_hpc_eval.py` 调 HPC 自己的 evaluator 验证 sintel_best.ckpt.meta.json 里的 5.09 (v3_acc)、4.89 (v3_efn_fps)、5.58 (v3_light) 都对得上
+- v3_acc 在 416×1024 input PTQ INT8 EPE = 5.25 vs HPC FP32 5.09，**Δ_pure_quant = +0.16**，validate 量化几乎无损
+- v3_acc/efn_fps/light 在 157×203 重新跑 flow_scale=12.5 拿到真数字
+- findings.md §7b/7c 大幅重写；task_plan.md Phase 3 子任务勾选；progress 表 R8-R10 标注 invalid（bug），新增 R11-R15
+
+**新发现：**
+- v3 训练时 `(uint8/255)*2-1` 输入归一化和 `flow/12.5` GT 缩放是两件独立的事，缺一不可
+- 越轻的 v3 子网（少 block / 小 kernel）越对 input 分辨率降级敏感：mainline +1.48 / v3_efn_fps +2.45 / v3_acc +3.31 / v3_light +7.15 (416×1024→157×203)
+- v3_efn_fps 是当前唯一同时打过 mainline EPE 和 latency 的 NAS 子网
+
+**当前阶段**：Phase 3 in_progress，下一步烧 v3_efn_fps 上板验证可视化
 
 ---
 
@@ -124,9 +159,14 @@ V3 子网在 157×203 EPE 普遍比 mainline 差 +2.87 ~ +3.14。但 Vela SRAM p
 | 2026-05-11 R5 | M1 mainline | FP32 ckpt (test_sintel.py 默认) | train **final** | 1041 | **6.3117 / —** | 复现用户记忆 baseline；wrapper 默认指向 Final |
 | 2026-05-11 R6 | M1 mainline | INT8 (test_sintel mode) | train final | 1041 | **7.7911 / 2.3706** | ResizeNearestCrop@416×1024 + clip 50；vs R5 Δ=+1.48 |
 | 2026-05-11 R7 | M1 mainline | FP32 (test_sintel mode, 157×203 in) | train final | 1041 | **7.7059 / 2.3083** | 隔离纯量化：vs R6 Δ_pure_quant=+0.085；vs R5 Δ_downsample=+1.39 |
-| 2026-05-11 R8 | M2 v3_acc | INT8 (test_sintel, 157×203 in) | train final | 1041 | **10.6637 / 4.1021** | Vela peak 1143 KiB, 189.67 ms; Δ vs mainline +2.87 |
-| 2026-05-11 R9 | M2 v3_efn_fps | INT8 (test_sintel, 157×203 in) | train final | 1041 | **10.6724 / 4.0929** | Vela peak 1143 KiB, 165.22 ms; Δ vs mainline +2.88 |
-| 2026-05-11 R10 | M2 v3_light | INT8 (test_sintel, 157×203 in) | train final | 1041 | **10.9277 / 4.4540** | Vela peak 1143 KiB, 95.94 ms; Δ vs mainline +3.14 |
+| 2026-05-11 R8 | M2 v3_acc | INT8 (test_sintel, 157×203 in, **no flow_scale, BUG**) | train final | 1041 | 10.6637 / 4.1021 | invalid — 忘乘 12.5 |
+| 2026-05-11 R9 | M2 v3_efn_fps | INT8 (test_sintel, 157×203 in, **no flow_scale, BUG**) | train final | 1041 | 10.6724 / 4.0929 | invalid |
+| 2026-05-11 R10 | M2 v3_light | INT8 (test_sintel, 157×203 in, **no flow_scale, BUG**) | train final | 1041 | 10.9277 / 4.4540 | invalid |
+| 2026-05-11 R11 | M2 v3_acc | HPC FP32 (own evaluator, 416×1024 in) | train final | 1041 | **5.0898** / — | 复现 meta.json metric，validate HPC pipeline |
+| 2026-05-11 R12 | M2 v3_acc | INT8 (test_sintel, 416×1024 in, flow_scale=12.5) | train final | 1041 | **5.2504** / 1.6180 | 同 HPC 方法学下 PTQ Δ=+0.16，validate 量化无损 |
+| 2026-05-11 R13 | M2 v3_acc | INT8 (test_sintel, 157×203 in, flow_scale=12.5) | train final | 1041 | **8.3963** / 5.3634 | Δ vs mainline-INT8 +0.60 |
+| 2026-05-11 R14 | **M2 v3_efn_fps** | INT8 (test_sintel, 157×203 in, flow_scale=12.5) | train final | 1041 | **7.3354 / 3.7575** | **Δ vs mainline-INT8 −0.45 → WIN**，165 ms inf |
+| 2026-05-11 R15 | M2 v3_light | INT8 (test_sintel, 157×203 in, flow_scale=12.5) | train final | 1041 | **12.7268** / 11.0980 | Δ vs mainline-INT8 +4.94，最轻架构降分辨率敏感 |
 
 ---
 
@@ -158,8 +198,11 @@ V3 子网在 157×203 EPE 普遍比 mainline 差 +2.87 ~ +3.14。但 Vela SRAM p
 | `model_zoo/optical_flow/edgeflownas_v3/v3_light/157x203/*_vela.tflite` | created | 3 | v3_light Vela tflite |
 | `plan/MCUFlowNet_Deployment/m2_v3_acc_sintel_final_test_sintel.json` | created | 3 | EPE report v3_acc (10.66) |
 | `plan/MCUFlowNet_Deployment/m2_v3_efn_fps_sintel_final_test_sintel.json` | created | 3 | EPE report v3_efn_fps (10.67) |
-| `plan/MCUFlowNet_Deployment/m2_v3_light_sintel_final_test_sintel.json` | created | 3 | EPE report v3_light (10.93) |
+| `plan/MCUFlowNet_Deployment/m2_v3_light_sintel_final_test_sintel.json` | created | 3 | EPE report v3_light (10.93, no-scale BUG) |
 | `tools/eval/eval_int8_one.sh` | created | 3 | one-shot INT8 eval wrapper (uses test_sintel mode + Final list) |
+| `plan/MCUFlowNet_Deployment/m2_v3_acc_sintel_final_test_sintel_s125.json` | created | 3 | EPE 8.40 (corrected, flow_scale=12.5) |
+| `plan/MCUFlowNet_Deployment/m2_v3_efn_fps_sintel_final_test_sintel_s125.json` | created | 3 | EPE 7.34 (corrected) — winner |
+| `plan/MCUFlowNet_Deployment/m2_v3_light_sintel_final_test_sintel_s125.json` | created | 3 | EPE 12.73 (corrected) |
 
 ---
 

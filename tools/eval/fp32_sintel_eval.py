@@ -68,6 +68,35 @@ def load_pair_list(list_path, sintel_root):
     return pairs
 
 
+def _center_crop(arr_hw, target_h, target_w):
+    h, w = arr_hw.shape[:2]
+    if h < target_h or w < target_w:
+        pad_h = max(0, target_h - h)
+        pad_w = max(0, target_w - w)
+        arr_hw = np.pad(arr_hw, ((pad_h // 2, pad_h - pad_h // 2),
+                                  (pad_w // 2, pad_w - pad_w // 2), (0, 0)),
+                        mode="reflect")
+        h, w = arr_hw.shape[:2]
+    y0 = int(np.ceil(h / 2 - target_h / 2))
+    x0 = int(np.ceil(w / 2 - target_w / 2))
+    return arr_hw[y0 : y0 + target_h, x0 : x0 + target_w]
+
+
+def _closest_resize_dims(src_w, src_h, dst_w, dst_h):
+    src_ar = src_w / src_h
+    dst_ar = dst_w / dst_h
+    if dst_ar < src_ar:
+        return int(dst_h * src_ar), dst_h
+    return dst_w, int(dst_w / src_ar)
+
+
+def resize_nearest_crop_stack(stack_hwc, target_h, target_w):
+    src_h, src_w = stack_hwc.shape[:2]
+    new_w, new_h = _closest_resize_dims(src_w, src_h, target_w, target_h)
+    resized = cv2.resize(stack_hwc, (new_w, new_h), interpolation=cv2.INTER_LINEAR)
+    return _center_crop(resized, target_h, target_w)
+
+
 def resize_flow_to(flow_hw2, new_h, new_w):
     src_h, src_w = flow_hw2.shape[:2]
     if (src_h, src_w) == (new_h, new_w):
@@ -125,6 +154,10 @@ def main():
     ap.add_argument("--height", type=int, default=157)
     ap.add_argument("--width", type=int, default=203)
     ap.add_argument("--limit", type=int, default=0)
+    ap.add_argument("--ref-mode", choices=("direct", "test_sintel"), default="test_sintel")
+    ap.add_argument("--clip-val", type=float, default=50.0)
+    ap.add_argument("--patch-h", type=int, default=416)
+    ap.add_argument("--patch-w", type=int, default=1024)
     ap.add_argument("--report", default="")
     args = ap.parse_args()
 
@@ -155,15 +188,30 @@ def main():
             skipped += 1
             continue
 
-        r1 = cv2.resize(img1, (args.width, args.height), interpolation=cv2.INTER_LINEAR)
-        r2 = cv2.resize(img2, (args.width, args.height), interpolation=cv2.INTER_LINEAR)
-        x = np.concatenate([r1, r2], axis=2).astype(np.float32)[None, ...]
+        if args.ref_mode == "test_sintel":
+            gt_c = np.clip(gt, -args.clip_val, args.clip_val) if args.clip_val > 0 else gt
+            stack = np.concatenate([img1.astype(np.float32), img2.astype(np.float32),
+                                     gt_c.astype(np.float32)], axis=2)
+            stack_p = resize_nearest_crop_stack(stack, args.patch_h, args.patch_w)
+            i1p, i2p = stack_p[..., 0:3], stack_p[..., 3:6]
+            gt_eval = stack_p[..., 6:8]
+            r1 = cv2.resize(i1p, (args.width, args.height), interpolation=cv2.INTER_LINEAR)
+            r2 = cv2.resize(i2p, (args.width, args.height), interpolation=cv2.INTER_LINEAR)
+        else:
+            r1 = cv2.resize(img1, (args.width, args.height), interpolation=cv2.INTER_LINEAR)
+            r2 = cv2.resize(img2, (args.width, args.height), interpolation=cv2.INTER_LINEAR)
 
+        x = np.concatenate([r1, r2], axis=2).astype(np.float32)[None, ...]
         pred = sess.run(out_t, feed_dict={in_ph: x})[0]  # H,W,2 float32
 
-        gt_h, gt_w = gt.shape[:2]
-        pred_native = resize_flow_to(pred, gt_h, gt_w)
-        diff = pred_native - gt
+        if args.ref_mode == "test_sintel":
+            pred_eval = resize_flow_to(pred, args.patch_h, args.patch_w)
+        else:
+            gt_h, gt_w = gt.shape[:2]
+            pred_eval = resize_flow_to(pred, gt_h, gt_w)
+            gt_eval = gt
+
+        diff = pred_eval - gt_eval
         epe_map = np.sqrt(np.sum(diff * diff, axis=-1))
         frame_epe = float(epe_map.mean())
         epe_per_frame.append(frame_epe)

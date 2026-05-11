@@ -137,9 +137,36 @@ evaluator (`tools/eval/int8_sintel_eval.py`) 加了 `--eval-grid {native,pred}`�
 
 ### 量化决策最终结论（M1）
 
-- **PTQ INT8 已经足够，QAT 不立项**。Δ = +0.13 远低于先前定的 0.3 阈值。
+- **PTQ INT8 已经足够，QAT 不立项**。Δ_纯量化 = +0.085 远低于 0.3 阈值。
 - 想再压精度只能动 **input 分辨率 / 网络结构 / 训练数据**，不是量化方式。
 - M2 retrain_v3 进入部署后，先复用同样 PTQ + 同样 evaluator 跑数；如果它的 Δ 突然变大，再考虑 QAT。
+
+## 12. 决定切换：默认评估集 = Sintel **Final**（不再用 Clean）
+
+- 用户先前的 baseline 6.31 来自 `wrappers/run_test.py` 默认配置，wrapper 把 `--dataset sintel` 隐式指向 **`MPI_Sintel_Final_train_list.txt`**（不是 Clean）。
+- Final pass = 同样 1041 帧/23 scenes，但加了 motion blur / depth-of-field / 大气散射 / 合成阴影 → 更接近真实硬件场景，EPE 比 Clean 高 ~0.85。
+- evaluator 默认数据集已切到 Final，wrapper `run_m1_int8_eval.sh` 默认 `LIST=...MPI_Sintel_Final_train_list.txt`。
+- 想跑 Clean 仍可 `LIST=.../MPI_Sintel_train_clean.txt bash run_m1_int8_eval.sh`。
+
+## 13. 完整 M1 Δ 矩阵（Final pass, 1041 帧, 2026-05-11）
+
+evaluator 加了 `--ref-mode test_sintel`，用 `ResizeNearestCrop @ 416×1024 + clip_val=50 + flow vector 上采样到 patch grid` 复现 `test_sintel.py` 方法学。
+
+| Config | input grid | eval grid | clip | EPE | 用途 |
+|---|---|---|---|---:|---|
+| FP32 (test_sintel.py 默认, 论文复刻) | 416×1024 | 416×1024 | ±50 | **6.3117** | 你之前的 baseline |
+| FP32 (我的 evaluator, test_sintel mode) | 157×203 | 416×1024 | ±50 | 7.7059 | 隔离"降分辨率" |
+| INT8 PTQ (test_sintel mode) | 157×203 | 416×1024 | ±50 | **7.7911** | 板端真实方法学 |
+| FP32 (native, no clip) | 157×203 | 1024×436 | none | 6.7915 | 同 pipeline 苹果对苹果 (Clean) |
+| INT8 PTQ (native, no clip) | 157×203 | 1024×436 | none | 6.9238 | 同 pipeline 苹果对苹果 (Clean) |
+
+**Δ 拆解（Final pass, test_sintel methodology）：**
+
+- **Δ_pure_quant = INT8 − FP32 (同 157×203 input) = +0.085 (+1.1%)** ← PTQ 损失，可忽略
+- **Δ_downsample = FP32_157×203 − FP32_416×1024 = +1.39 (+22%)** ← 板上 input 分辨率限制损失
+- **Δ_total vs 你的 6.31 = +1.48** ← 量化 + 降分辨率 合起来
+
+**结论再次确认**：INT8 量化本身几乎不损失精度；板上看到的 EPE 上涨主要来自 157×203 输入分辨率上限（受 1432 KiB Tensor Arena 制约）。**QAT 在 M1 上无效，不立项**。要降 EPE 必须放更大的 input（需要 arena / 模型结构改造，参见 plan-018 系列对 158×202 失败的记录）或者换网络结构（M2 retrain_v3 的研究目标）。
 
 ## 11. 决策悬而未决
 

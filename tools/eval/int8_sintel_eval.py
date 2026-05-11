@@ -1,18 +1,29 @@
 #!/usr/bin/env python3
-"""Evaluate a PTQ INT8 TFLite optical-flow model on MPI-Sintel training (clean).
+"""Evaluate a PTQ INT8 TFLite optical-flow model on MPI-Sintel training.
 
 Mirrors the inference numerics of the deployed Grove Vision AI V2 model:
     - input is the PRE-Vela INT8 TFLite (same weights & quant params as the _vela one).
     - input quantization is treated as `int8 = uint8 - 128` when scale=1.0, zp=-128.
 
-EPE evaluation grids (selectable via --eval-grid):
-    - "native" (default, standard methodology, comparable to EdgeFlowNet paper /
-      `test_sintel.py` baseline): upsample prediction to GT resolution (1024x436)
-      and rescale flow vectors by the corresponding pixel ratio, then compute
-      EPE pixel-for-pixel against the original GT flow.
-    - "pred":  legacy debug mode — downsample GT to prediction grid (160x208)
-      and rescale flow vectors down. EPE in this mode is numerically smaller
-      by ~sqrt(fx*fy) and IS NOT comparable to the paper number.
+Two evaluation modes, selectable via --ref-mode:
+
+* "direct" (controlled by --eval-grid):
+    - "native": upsample prediction to GT native resolution (1024x436) and
+      rescale flow vectors by the pixel ratio. EPE pixel-for-pixel vs GT.
+    - "pred":   legacy debug — downsample GT to pred grid (160x208) with flow
+      magnitudes scaled DOWN. EPE in this mode is ~3.66x smaller; not paper-comparable.
+
+* "test_sintel" (--ref-mode test_sintel, default in this project):
+    Reproduce the EdgeFlowNet `test_sintel.py` methodology:
+      1. Clip GT to [-clip_val, +clip_val]  (default clip_val=50)
+      2. Stack [img1, img2, GT] (8ch) and ResizeNearestCrop the stack to
+         (patch_h, patch_w)  (default 416 x 1024).
+      3. Split back; further bilinear-resize img1, img2 down to the INT8 model
+         input (157 x 203). Predict 160 x 208 flow.
+      4. Bilinear-upsample prediction to (patch_h, patch_w) and rescale flow
+         vectors by the ratio (since pred is in model-grid pixel units).
+      5. EPE = mean(||pred - gt||) at (patch_h, patch_w).
+    Apples-to-apples vs `test_sintel.py --uncertainity` on the same data list.
 """
 import argparse
 import json
@@ -72,6 +83,49 @@ def prepare_input(img1, img2, target_h, target_w, in_scale, in_zp):
     return q[None, ...]  # 1,H,W,6
 
 
+def _center_crop(arr_hw, target_h, target_w):
+    """Center-crop a HxWx... array to (target_h, target_w). Pads with mirrors if too small."""
+    h, w = arr_hw.shape[:2]
+    if h < target_h or w < target_w:
+        # mirror-pad just enough then crop (rare with 1024x436 -> 416x1024 since W only shrinks)
+        pad_h = max(0, target_h - h)
+        pad_w = max(0, target_w - w)
+        arr_hw = np.pad(
+            arr_hw,
+            ((pad_h // 2, pad_h - pad_h // 2), (pad_w // 2, pad_w - pad_w // 2), (0, 0)),
+            mode="reflect",
+        )
+        h, w = arr_hw.shape[:2]
+    y0 = int(np.ceil(h / 2 - target_h / 2))
+    x0 = int(np.ceil(w / 2 - target_w / 2))
+    return arr_hw[y0 : y0 + target_h, x0 : x0 + target_w]
+
+
+def _closest_resize_dims(src_w, src_h, dst_w, dst_h):
+    """Match the EdgeFlowNet `closest_resizing` helper."""
+    src_ar = src_w / src_h
+    dst_ar = dst_w / dst_h
+    if dst_ar < src_ar:
+        new_h = dst_h
+        new_w = int(new_h * src_ar)
+    else:
+        new_w = dst_w
+        new_h = int(new_w / src_ar)
+    return new_w, new_h
+
+
+def resize_nearest_crop_stack(stack_hwc, target_h, target_w):
+    """Equivalent of misc.ImageUtils.ResizeNearestCrop on an HxWxC numpy array.
+
+    Resizes spatially without aspect distortion (cv2 bilinear), then center-crops
+    to exactly (target_h, target_w). Flow values inside the stack are NOT
+    magnitude-rescaled (matches test_sintel.py)."""
+    src_h, src_w = stack_hwc.shape[:2]
+    new_w, new_h = _closest_resize_dims(src_w, src_h, target_w, target_h)
+    resized = cv2.resize(stack_hwc, (new_w, new_h), interpolation=cv2.INTER_LINEAR)
+    return _center_crop(resized, target_h, target_w)
+
+
 def resize_flow_to(flow_hw2, new_h, new_w):
     """Bilinear-resize a [H,W,2] flow to (new_h,new_w) AND rescale magnitudes."""
     src_h, src_w = flow_hw2.shape[:2]
@@ -93,12 +147,23 @@ def main():
     ap.add_argument("--sintel-root", required=True)
     ap.add_argument("--limit", type=int, default=0, help="0 = full list")
     ap.add_argument(
+        "--ref-mode",
+        choices=("direct", "test_sintel"),
+        default="test_sintel",
+        help="direct: use --eval-grid (native/pred). "
+             "test_sintel: emulate EdgeFlowNet test_sintel.py "
+             "(ResizeNearestCrop @ patch + clip_val + flow rescale to patch grid).",
+    )
+    ap.add_argument(
         "--eval-grid",
         choices=("native", "pred"),
         default="native",
-        help="native: upsample pred to GT res (standard, paper-comparable). "
-             "pred: downsample GT to pred res (legacy, ~sqrt(fx*fy)x smaller EPE).",
+        help="direct mode only. native = upsample pred to GT res.",
     )
+    ap.add_argument("--clip-val", type=float, default=50.0,
+                    help="GT clip (test_sintel mode). 0 = no clip.")
+    ap.add_argument("--patch-h", type=int, default=416)
+    ap.add_argument("--patch-w", type=int, default=1024)
     ap.add_argument("--report", default="")
     ap.add_argument("--threads", type=int, default=4)
     args = ap.parse_args()
@@ -134,19 +199,37 @@ def main():
             skipped += 1
             continue
 
-        x = prepare_input(img1, img2, in_h, in_w, in_scale, in_zp)
+        if args.ref_mode == "test_sintel":
+            gt_clipped = np.clip(gt, -args.clip_val, args.clip_val) if args.clip_val > 0 else gt
+            stack = np.concatenate([img1.astype(np.float32),
+                                     img2.astype(np.float32),
+                                     gt_clipped.astype(np.float32)], axis=2)
+            stack_patch = resize_nearest_crop_stack(stack, args.patch_h, args.patch_w)
+            i1_patch = stack_patch[..., 0:3]
+            i2_patch = stack_patch[..., 3:6]
+            gt_eval = stack_patch[..., 6:8]  # GT at (patch_h, patch_w), flow values unchanged
+            r1 = cv2.resize(i1_patch, (in_w, in_h), interpolation=cv2.INTER_LINEAR)
+            r2 = cv2.resize(i2_patch, (in_w, in_h), interpolation=cv2.INTER_LINEAR)
+            stk = np.concatenate([r1, r2], axis=2)
+            q = np.round(stk / in_scale + in_zp).astype(np.int32)
+            x = np.clip(q, -128, 127).astype(np.int8)[None, ...]
+        else:
+            x = prepare_input(img1, img2, in_h, in_w, in_scale, in_zp)
+
         interp.set_tensor(inp["index"], x)
         interp.invoke()
         y_i8 = interp.get_tensor(out["index"])[0]  # H,W,2 int8
         pred = (y_i8.astype(np.float32) - out_zp) * out_scale  # dequant @ out_h,out_w
 
-        if args.eval_grid == "native":
+        if args.ref_mode == "test_sintel":
+            pred_eval = resize_flow_to(pred, args.patch_h, args.patch_w)
+        elif args.eval_grid == "native":
             gt_h, gt_w = gt.shape[:2]
-            pred_eval = resize_flow_to(pred, gt_h, gt_w)  # upsample + scale UP
+            pred_eval = resize_flow_to(pred, gt_h, gt_w)
             gt_eval = gt
-        else:  # "pred"
+        else:
             pred_eval = pred
-            gt_eval = resize_flow_to(gt, out_h, out_w)  # downsample + scale DOWN
+            gt_eval = resize_flow_to(gt, out_h, out_w)
 
         diff = pred_eval - gt_eval
         epe_map = np.sqrt(np.sum(diff * diff, axis=-1))  # H,W
@@ -169,7 +252,10 @@ def main():
     }
 
     print("\n----- SUMMARY -----")
-    print(f"eval grid        : {args.eval_grid}")
+    if args.ref_mode == "test_sintel":
+        print(f"ref mode         : test_sintel (patch={args.patch_h}x{args.patch_w}, clip_val={args.clip_val})")
+    else:
+        print(f"ref mode         : direct, eval-grid={args.eval_grid}")
     print(f"frames evaluated : {len(epe_per_frame)}")
     print(f"skipped          : {skipped}")
     print(f"elapsed          : {elapsed:.1f}s "
@@ -188,7 +274,10 @@ def main():
                     "tflite": args.tflite,
                     "list": args.list_path,
                     "sintel_root": args.sintel_root,
+                    "ref_mode": args.ref_mode,
                     "eval_grid": args.eval_grid,
+                    "clip_val": args.clip_val,
+                    "patch_hw": [args.patch_h, args.patch_w],
                     "n_frames": len(epe_per_frame),
                     "n_skipped": skipped,
                     "elapsed_sec": elapsed,

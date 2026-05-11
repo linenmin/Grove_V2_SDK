@@ -22,6 +22,26 @@
 
 ---
 
+## 2026-05-11 — Session 3
+
+**完成：**
+- 用户提醒 `wrappers/run_test.py` 默认数据集是 **Sintel Final**，不是 Clean → 之前 EPE 数字含糊不清的根因
+- 用 test_sintel.py + Final 复现用户 6.31 baseline 成功（EPE=6.3117）
+- 给 `int8_sintel_eval.py` 和 `fp32_sintel_eval.py` 加 `--ref-mode test_sintel`：复现 `test_sintel.py` 方法学（ResizeNearestCrop @ 416×1024 + clip_val=50 + flow vector 上采样到 patch grid）
+- wrapper `run_m1_int8_eval.sh` 默认数据集切到 **Final**，默认 ref-mode = test_sintel
+- 跑完三组对照：
+  - INT8 test_sintel mode @ Final = **7.7911** (vs 用户 6.31 → +1.48)
+  - FP32 test_sintel mode @ Final (157×203 input) = **7.7059**
+  - **Δ_pure_quant = INT8 − FP32(同 input) = +0.085 (+1.1%)** ← 量化本身几乎无损
+  - **Δ_downsample = FP32(157×203) − FP32(416×1024) = +1.39 (+22%)** ← 输入分辨率丢失
+- **结论确认**：QAT 不立项；想降 EPE 必须动 input 分辨率 / 模型结构（这正是 M2 retrain_v3 的研究目标）
+
+**新发现（已落 findings.md §12-§13）：**
+- 项目默认评估集切到 Sintel Final
+- 完整 Δ 矩阵 = 量化损失 +0.085 + 降分辨率损失 +1.39 = 总 +1.48 vs 论文/FP32 416×1024 baseline
+
+---
+
 ## 2026-05-11 — Session 2
 
 **完成：**
@@ -77,6 +97,9 @@
 | 2026-05-11 R2 | M1 mainline | PTQ INT8 | train clean | 1041 | **6.9238 / 2.3303** | native-grid (1024×436)，标准方法 |
 | 2026-05-11 R3 | M1 mainline | FP32 ckpt (test_sintel.py) | train clean | 1041 | 5.4649 / — | 旁路对照, ResizeNearestCrop @ 416×1024, 方法学不同, 不参与 Δ |
 | 2026-05-11 R4 | M1 mainline | **FP32 ckpt (native grid)** | train clean | 1041 | **6.7915 / 2.1971** | apples-to-apples vs R2; ΔEPE = +0.1323 → **QAT 不立项** |
+| 2026-05-11 R5 | M1 mainline | FP32 ckpt (test_sintel.py 默认) | train **final** | 1041 | **6.3117 / —** | 复现用户记忆 baseline；wrapper 默认指向 Final |
+| 2026-05-11 R6 | M1 mainline | INT8 (test_sintel mode) | train final | 1041 | **7.7911 / 2.3706** | ResizeNearestCrop@416×1024 + clip 50；vs R5 Δ=+1.48 |
+| 2026-05-11 R7 | M1 mainline | FP32 (test_sintel mode, 157×203 in) | train final | 1041 | **7.7059 / 2.3083** | 隔离纯量化：vs R6 Δ_pure_quant=+0.085；vs R5 Δ_downsample=+1.39 |
 
 ---
 
@@ -96,8 +119,11 @@
 | `tools/eval/run_m1_fp32_native_eval.sh` | created | 2 | FP32 wrapper via new evaluator (native grid) |
 | `plan/MCUFlowNet_Deployment/m1_int8_sintel_clean.json` | created | 2 | EPE report (pred-grid, BUG ref) |
 | `plan/MCUFlowNet_Deployment/m1_int8_sintel_clean_native.json` | created | 2 | EPE report (INT8 native, 6.92) |
-| `plan/MCUFlowNet_Deployment/m1_fp32_sintel_clean.log` | created | 2 | test_sintel.py log (5.46, side-channel) |
-| `plan/MCUFlowNet_Deployment/m1_fp32_sintel_clean_native.json` | created | 2 | EPE report (FP32 native, 6.79) |
+| `plan/MCUFlowNet_Deployment/m1_fp32_sintel_clean.log` | created | 2 | test_sintel.py log (5.46, Clean side-channel) |
+| `plan/MCUFlowNet_Deployment/m1_fp32_sintel_clean_native.json` | created | 2 | EPE report (FP32 native, Clean, 6.79) |
+| `plan/MCUFlowNet_Deployment/m1_fp32_sintel_final.log` | created | 2 | test_sintel.py log (Final, 6.31) |
+| `plan/MCUFlowNet_Deployment/m1_int8_sintel_final_test_sintel.json` | created | 2 | EPE report (INT8 test_sintel Final, 7.79) |
+| `plan/MCUFlowNet_Deployment/m1_fp32_sintel_final_test_sintel.json` | created | 2 | EPE report (FP32 test_sintel mode Final 157×203 in, 7.71) |
 
 ---
 

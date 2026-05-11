@@ -162,6 +162,10 @@ def main():
     )
     ap.add_argument("--clip-val", type=float, default=50.0,
                     help="GT clip (test_sintel mode). 0 = no clip.")
+    ap.add_argument("--flow-scale", type=float, default=1.0,
+                    help="Multiplier applied to predicted flow (e.g. 12.5 for "
+                         "ft3d-trained EdgeFlowNAS subnets where training GT "
+                         "was divided by 12.5).")
     ap.add_argument("--patch-h", type=int, default=416)
     ap.add_argument("--patch-w", type=int, default=1024)
     ap.add_argument("--report", default="")
@@ -220,6 +224,8 @@ def main():
         interp.invoke()
         y_i8 = interp.get_tensor(out["index"])[0]  # H,W,2 int8
         pred = (y_i8.astype(np.float32) - out_zp) * out_scale  # dequant @ out_h,out_w
+        if args.flow_scale != 1.0:
+            pred = pred * float(args.flow_scale)
 
         if args.ref_mode == "test_sintel":
             pred_eval = resize_flow_to(pred, args.patch_h, args.patch_w)

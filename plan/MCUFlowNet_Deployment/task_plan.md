@@ -27,14 +27,15 @@ Phase 3（M2 EdgeFlowNAS retrain_v3 子网部署）— M1 Phase 1/2 已闭环，
 - [x] Discord 推送结果（INT8 阶段已推；FP32 完成后再推一次）
 - **Status:** complete
 
-### Phase 3: M2 (EdgeFlowNAS retrain_v3 子网) 部署
-- [ ] 从 HPC 下载的权重 (`D:\Dataset\MCUFlowNet\EdgeFlowNAS\outputs\retrain_v3_ft3d\retrain_v3_ft3d_run1`) 适配到 export 脚本
-- [ ] 比对 retrain_v3 网络定义和当前 `run_export.py` 的 variant 表，确定是否需要新增 variant module
-- [ ] PTQ INT8 导出 + Vela 编译 → 检查 SRAM peak 是否在 1432 KiB arena 内
-- [ ] 板端部署 + 可视化验证
-- [ ] Sintel EPE 评估（FP32 + INT8）
-- [ ] （如 Phase 2 决定需要 QAT）做 QAT 后重测
-- **Status:** pending
+### Phase 3: M2 (EdgeFlowNAS retrain_v3 子网) 部署 — **in_progress**
+- [x] 写 export 脚本 `tools/model_export/edgeflownas_v3/run_export.py`：FixedArchModelV3 graph + 输入归一化 `(x-127.5)/127.5` 烧进 graph + PTQ INT8 + Vela
+- [x] 3 个候选子网 (v3_acc / v3_efn_fps / v3_light) 在 157×203 都成功 INT8+Vela 导出
+- [x] Sintel Final EPE @ 157×203（同 mainline 方法学）：v3_acc 10.66 / v3_efn_fps 10.67 / v3_light 10.93 (vs mainline 7.79)
+- [ ] **决策点**：v3 SRAM peak (1143 KiB) 比 mainline (1430 KiB) 少 287 KiB → 应放大 input 尺寸利用余量，再评估
+  - [ ] 找到 Vela peak 接近 1432 KiB 的最大输入尺寸（试 172×224、200×256 等）
+  - [ ] 重新跑 EPE → 看能否反超 mainline 7.79
+- [ ] 板端烧录最佳 v3 子网 + flow_viewer 验证
+- **Status:** in_progress
 
 ### Phase 4: M3 (第三个模型，TBD) 部署
 - [ ] 模型类型与权重路径待定

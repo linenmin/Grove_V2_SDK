@@ -72,9 +72,57 @@
 ## 7. M2 (EdgeFlowNAS retrain_v3) 已知信息
 
 - 训练计划文档：`D:\Dataset\MCUFlowNet\EdgeFlowNAS\plan\retrain_v3\`
-- 已下载的 HPC 训练产物：`D:\Dataset\MCUFlowNet\EdgeFlowNAS\outputs\retrain_v3_ft3d\retrain_v3_ft3d_run1\`
-- 网络结构 vs mainline 的差异 / variant 表是否覆盖：**尚未核查**
-- 量化校准数据是否可复用 mainline 的 calibration set：**尚未核查**
+- HPC 训练产物：`D:\Dataset\MCUFlowNet\EdgeFlowNAS\outputs\retrain_v3_ft3d\retrain_v3_ft3d_run1\`
+- **3 个候选子网** (`retrain_v3_candidates.csv`)：
+  - `v3_acc`     arch=`0,1,2,2,2,2,0,0,0,0,1` — strongest predicted accuracy (HPC sintel_best = 5.0898)
+  - `v3_efn_fps` arch=`2,0,0,2,2,1,0,0,0,0,0` — matches EdgeFlowNet FPS target
+  - `v3_light`   arch=`0,0,0,0,0,0,0,0,0,0,0` — lightest Pareto endpoint
+- 网络结构：`efnas.network.fixed_arch_models_v3.FixedArchModelV3`，**bilinear-upsample 解码**（非 transpose-conv）；`NumOut=4`（uncertainty 模式，取 [...,0:2] 作为 flow）；3-scale multi-scale pred + AccumPreds
+- Ckpt 三件套：`best.ckpt`（FT3D val 最优）/ `last.ckpt`（末 epoch）/ **`sintel_best.ckpt`**（Sintel Final 评估最优，**部署用这个**）
+- 训练数据：FlyingThings3D，input 480×640，`ft3d_flow_divisor=12.5`（GT flow / 12.5 后再 clip ±50）
+- **训练时输入预处理**：`(uint8/255)*2 - 1` 归一化到 [-1,+1]。**这一步必须烧进 export graph**，否则 INT8 模型直接吃原始 uint8 会爆精度（实测 v3_acc EPE 12 → 加归一化后 ~5）
+- HPC 评估方法：input 416×1024 (patch_size)，prediction × `flow_divisor=12.5`。`sintel_best.ckpt.meta.json` 里 `metric` 字段即此方法下的 EPE
+- 在板上 PTQ INT8 / 157×203 配置下，由于归一化已经在 graph 里，**evaluator 不需要 `--flow-scale 12.5`**，pred 直接是像素位移单位
+- 量化校准数据：**复用 mainline 的 50 帧对**（PERTURBED_market_3 + PERTURBED_shaman_1）已验证 OK
+
+## 7a. M2 V3 子网部署链路状态
+
+- export 脚本：`tools/model_export/edgeflownas_v3/run_export.py`
+  - 输入归一化 `(x-127.5)/127.5` 已烧进 graph（板上固件 `int8=uint8-128` 保持不变）
+  - PTQ INT8 + Vela 一次性产出
+  - 发布路径：`model_zoo/optical_flow/edgeflownas_v3/<model_name>/<HxW>/`
+- wrapper：`tools/model_export/edgeflownas_v3/run_one.sh`（PATH 注入 vela env 后再运行）
+- evaluator wrapper：`tools/eval/eval_int8_one.sh`（默认 test_sintel mode + Final list）
+- evaluator 新增 `--flow-scale`（默认 1.0；v3 不需要 ×12.5）
+
+## 7b. M2 Phase 3 实验结果（PTQ INT8 @ 157×203, 2026-05-11）
+
+evaluator：`tools/eval/int8_sintel_eval.py --ref-mode test_sintel`（Sintel Final, 1041 帧, patch 416×1024, clip 50）
+
+| Model | Vela SRAM | Vela est. inf (ms) | INT8 avg EPE | INT8 median EPE | Δ vs Mainline (7.79) |
+|---|---:|---:|---:|---:|---:|
+| **Mainline** (transpose-conv) | 1430 KiB | ~188 | **7.7911** | 2.3706 | 0 |
+| v3_acc | 1143 KiB | 189.67 | 10.6637 | 4.1021 | **+2.87** |
+| v3_efn_fps | 1143 KiB | 165.22 | 10.6724 | 4.0929 | +2.88 |
+| v3_light | 1143 KiB | 95.94 | 10.9277 | 4.4540 | +3.14 |
+
+**观察**：
+- 所有 3 个 v3 子网在 **157×203 input** 下 EPE 都比 mainline 高 +2.87 ~ +3.14
+- Vela SRAM peak 1143 KiB，**比 mainline 少 287 KiB** → 当前 1432 KiB arena 利用率只有 80%，还有 ~287 KiB 余量
+- 推理时间：v3_light (96ms) 比 mainline 快近 2×；v3_acc / v3_efn_fps 接近 mainline
+- **关键假设待验证**：v3 训练在 480×640 (4:3)，强制 157×203 (1:1.3) 推理可能因 aspect ratio 不匹配损精度；v3 真正优势在 SRAM 余量 → 应该**放大 input** (172×224 / 200×256 / …) 充分用满 1432 KiB arena，那才是 v3 的合理部署点。当前数字只是 "同 input size 的对照"
+
+## 7c. M2 下一步候选
+
+按预期 ROI 排序：
+
+1. **放大 input 至 ≥172×224**（v3 SRAM 余量直接换分辨率）
+   - 用 Vela peak 1432 KiB 上限反推最大输入尺寸
+   - 重新跑 export + EPE → 看是否能反超 mainline 7.79
+2. （次选）保留 157×203 但调整 patch 长宽比和 padding 让 v3 在自己训练的 aspect ratio 附近推理（更激进，要改 export pipeline）
+3. （最次）放弃 v3 部署，用 mainline 作为 M2 baseline，只保留 v3 数字作为 NAS 价值对照
+
+## 8. M3：占位
 
 ## 8. M3：占位
 

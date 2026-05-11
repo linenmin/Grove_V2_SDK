@@ -6,19 +6,43 @@
 
 ## Next Action
 
-**Phase 3：M2 (EdgeFlowNAS retrain_v3 子网) 部署铺垫**
+**放大 v3 input 充分利用 SRAM 余量**
 
-立即可做：
-1. 读 retrain_v3 plan 文档：`D:\Dataset\MCUFlowNet\EdgeFlowNAS\plan\retrain_v3\` → 搞清子网架构和 mainline 差多少
-2. 检查训练产物清单：`D:\Dataset\MCUFlowNet\EdgeFlowNAS\outputs\retrain_v3_ft3d\retrain_v3_ft3d_run1\`
-   - 是 ckpt？keras h5？savedmodel？
-   - 网络定义文件路径？
-3. 决定 export 路径：
-   - 若结构和 `run_export.py` 现有 variant 表里某项相同 → 直接复用 `OPTICAL_FLOW_EXPORT_VARIANT=... OPTICAL_FLOW_CHECKPOINT_PREFIX=... bash scripts/export_optical_flow_144x192.sh`
-   - 若结构不同 → 新增 variant module 到 `network/`，再走同样脚本
-4. PTQ 导出 → Vela → 看 SRAM peak 是否在 1432 KiB 内（不在的话 fallback 到 144×192 / 调 arena）
-5. 板端烧录 + flow_viewer 可视化验证
-6. 用 `int8_sintel_eval.py` + `fp32_sintel_eval.py`（同一套 evaluator）跑 M2 EPE
+V3 子网在 157×203 EPE 普遍比 mainline 差 +2.87 ~ +3.14。但 Vela SRAM peak 只有 1143 KiB（mainline 1430 KiB），还有 287 KiB 余量。要让 V3 体现 NAS 优势，应该放大 input 用满 arena。
+
+具体步骤：
+1. 找到 V3 Vela peak ≈ 1432 KiB 的最大 input。试以下尺寸，每个跑 export 看 Vela report：
+   - 172×224 (NSGA-II 训练目标尺寸；预测 peak ~1386 KiB)
+   - 200×256
+   - 220×288
+   - 选 Vela peak < 1432 KiB 且最大的
+2. 在选定尺寸上重跑 3 个子网 (v3_acc / v3_efn_fps / v3_light) 全 Sintel Final EPE
+3. 看是否反超 mainline 的 7.79
+4. 同时检查板端 prev buffer 余量是否足够（当前 `remaining_after_arena=32`，arena 不变；如果 input 放大需要更大 prev buffer，要进 firmware 调整）
+5. 选出 EPE 最低的子网烧到板上，flow_viewer 验证
+
+如果放大 input 后 v3 仍打不过 mainline，则该轮 NAS 视为没有给出可部署 win，M2 退化为 mainline 平替；可以重启 NAS 搜索 v4。
+
+---
+
+## 2026-05-11 — Session 4
+
+**完成 Phase 3 第一轮（V3 子网 @ 157×203）：**
+- 探索 `efnas.network.fixed_arch_models_v3.FixedArchModelV3` + `retrain_v3_candidates.csv`
+- 写 `tools/model_export/edgeflownas_v3/run_export.py`：FixedArchModelV3 graph 构造 + 输入归一化烧进 graph + PTQ INT8 + Vela 一站式
+- 重要踩坑：v3 训练用 `(uint8/255)*2 - 1` 归一化，不烧进 graph 直接喂原 uint8 → EPE 爆到 12+。修复后 v3_acc 5-frame smoke EPE 5.13
+- 3 个子网 (v3_acc / v3_efn_fps / v3_light) 全部成功 Vela 编译，SRAM peak 都是 1143 KiB（比 mainline 1430 KiB 少 287 KiB）
+- 全 Sintel Final EPE：v3_acc 10.66 / v3_efn_fps 10.67 / v3_light 10.93 — 都比 mainline 7.79 差 +2.87~+3.14
+
+**新发现：**
+- v3 训练在 480×640 (4:3)，强制 157×203 (1:1.3) 推理可能因 aspect ratio 不匹配损精度
+- SRAM 余量 287 KiB 没被利用，v3 真正部署点应该是更大 input
+- v3_light 推理 96 ms，比 mainline 188 ms 快近 2× — latency 优势已经显现
+
+**遗留风险：**
+- 是否能用更大 input 让 v3 反超 mainline 仍待验证
+
+**当前阶段：** Phase 3 in_progress，下一步放大 input
 
 ---
 
@@ -100,6 +124,9 @@
 | 2026-05-11 R5 | M1 mainline | FP32 ckpt (test_sintel.py 默认) | train **final** | 1041 | **6.3117 / —** | 复现用户记忆 baseline；wrapper 默认指向 Final |
 | 2026-05-11 R6 | M1 mainline | INT8 (test_sintel mode) | train final | 1041 | **7.7911 / 2.3706** | ResizeNearestCrop@416×1024 + clip 50；vs R5 Δ=+1.48 |
 | 2026-05-11 R7 | M1 mainline | FP32 (test_sintel mode, 157×203 in) | train final | 1041 | **7.7059 / 2.3083** | 隔离纯量化：vs R6 Δ_pure_quant=+0.085；vs R5 Δ_downsample=+1.39 |
+| 2026-05-11 R8 | M2 v3_acc | INT8 (test_sintel, 157×203 in) | train final | 1041 | **10.6637 / 4.1021** | Vela peak 1143 KiB, 189.67 ms; Δ vs mainline +2.87 |
+| 2026-05-11 R9 | M2 v3_efn_fps | INT8 (test_sintel, 157×203 in) | train final | 1041 | **10.6724 / 4.0929** | Vela peak 1143 KiB, 165.22 ms; Δ vs mainline +2.88 |
+| 2026-05-11 R10 | M2 v3_light | INT8 (test_sintel, 157×203 in) | train final | 1041 | **10.9277 / 4.4540** | Vela peak 1143 KiB, 95.94 ms; Δ vs mainline +3.14 |
 
 ---
 
@@ -124,6 +151,15 @@
 | `plan/MCUFlowNet_Deployment/m1_fp32_sintel_final.log` | created | 2 | test_sintel.py log (Final, 6.31) |
 | `plan/MCUFlowNet_Deployment/m1_int8_sintel_final_test_sintel.json` | created | 2 | EPE report (INT8 test_sintel Final, 7.79) |
 | `plan/MCUFlowNet_Deployment/m1_fp32_sintel_final_test_sintel.json` | created | 2 | EPE report (FP32 test_sintel mode Final 157×203 in, 7.71) |
+| `tools/model_export/edgeflownas_v3/run_export.py` | created | 3 | V3 subnet PTQ INT8 + Vela exporter |
+| `tools/model_export/edgeflownas_v3/run_one.sh` | created | 3 | V3 export wrapper (sets PATH for vela) |
+| `model_zoo/optical_flow/edgeflownas_v3/v3_acc/157x203/*_vela.tflite` | created | 3 | v3_acc Vela tflite |
+| `model_zoo/optical_flow/edgeflownas_v3/v3_efn_fps/157x203/*_vela.tflite` | created | 3 | v3_efn_fps Vela tflite |
+| `model_zoo/optical_flow/edgeflownas_v3/v3_light/157x203/*_vela.tflite` | created | 3 | v3_light Vela tflite |
+| `plan/MCUFlowNet_Deployment/m2_v3_acc_sintel_final_test_sintel.json` | created | 3 | EPE report v3_acc (10.66) |
+| `plan/MCUFlowNet_Deployment/m2_v3_efn_fps_sintel_final_test_sintel.json` | created | 3 | EPE report v3_efn_fps (10.67) |
+| `plan/MCUFlowNet_Deployment/m2_v3_light_sintel_final_test_sintel.json` | created | 3 | EPE report v3_light (10.93) |
+| `tools/eval/eval_int8_one.sh` | created | 3 | one-shot INT8 eval wrapper (uses test_sintel mode + Final list) |
 
 ---
 

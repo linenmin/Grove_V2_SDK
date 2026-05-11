@@ -6,17 +6,19 @@
 
 ## Next Action
 
-**跑 FP32 baseline（原 `test_sintel.py` 在 best.ckpt 上）作为 QAT 决策依据**
+**Phase 3：M2 (EdgeFlowNAS retrain_v3 子网) 部署铺垫**
 
-具体步骤：
-1. 在 vela env 里跑 `D:\Dataset\MCUFlowNet\EdgeFlowNet\code\test_sintel.py`（或拷贝路径到 WSL），传 `--checkpoint /home/enmin/Seeed_Grove_Vision_AI_Module_V2/tools/model_export/optical_flow_144x192/assets/checkpoints/best.ckpt --data_list .../MPI_Sintel_train_clean.txt`
-   - 注意 patch_dim 默认 416×1024，建议改成与 INT8 评估对齐的 160×208 来直接比较；或者保留默认对齐 paper 数字。两者都跑一遍。
-2. 数字记入 `findings.md` 第 10 节作为 FP32 对照
-3. 比较 `Δ EPE = INT8 - FP32`：
-   - Δ < 0.2：PTQ 已经足够，不做 QAT
-   - 0.2 ≤ Δ < 0.5：边界，看高速场景具体退化情况
-   - Δ ≥ 0.5：触发 QAT 立项
-4. Phase 2 在此处收口，进入 Phase 3 (M2 部署)
+立即可做：
+1. 读 retrain_v3 plan 文档：`D:\Dataset\MCUFlowNet\EdgeFlowNAS\plan\retrain_v3\` → 搞清子网架构和 mainline 差多少
+2. 检查训练产物清单：`D:\Dataset\MCUFlowNet\EdgeFlowNAS\outputs\retrain_v3_ft3d\retrain_v3_ft3d_run1\`
+   - 是 ckpt？keras h5？savedmodel？
+   - 网络定义文件路径？
+3. 决定 export 路径：
+   - 若结构和 `run_export.py` 现有 variant 表里某项相同 → 直接复用 `OPTICAL_FLOW_EXPORT_VARIANT=... OPTICAL_FLOW_CHECKPOINT_PREFIX=... bash scripts/export_optical_flow_144x192.sh`
+   - 若结构不同 → 新增 variant module 到 `network/`，再走同样脚本
+4. PTQ 导出 → Vela → 看 SRAM peak 是否在 1432 KiB 内（不在的话 fallback 到 144×192 / 调 arena）
+5. 板端烧录 + flow_viewer 可视化验证
+6. 用 `int8_sintel_eval.py` + `fp32_sintel_eval.py`（同一套 evaluator）跑 M2 EPE
 
 ---
 
@@ -25,12 +27,18 @@
 **完成：**
 - 修 evaluator EPE 方法学 bug：加 `--eval-grid {native,pred}`，default native
 - M1 INT8 重跑（native grid 1024×436）：**avg EPE 6.9238**（median 2.33，1041 帧，287s）
-- 量级对齐论文 6.31，ΔEPE ≈ +0.6（vs 论文）
-- 评估 GPU 适配性：硬件 OK（RTX 4060 Laptop），vela env TF 2.15 是 CUDA build 但缺 CUDA 12.2/cuDNN 8 lib；tf_work_hpc 不是 CUDA build。当前任务 (TFLite int8 + 小模型 FP32) 不需要 GPU；QAT 阶段再补 CUDA stack。
+- 评估 GPU 适配性：硬件 OK（RTX 4060 Laptop），vela env TF 2.15 是 CUDA build 但缺 CUDA 12.2/cuDNN 8 lib；tf_work_hpc 不是 CUDA build。当前任务 (TFLite int8 + 小模型 FP32) 不需要 GPU
+- git commit `d8bc67d`：feat(plan): add MCUFlowNet_Deployment plan + INT8 Sintel evaluator
+- 跑 FP32 baseline（test_sintel.py 默认 416×1024）：EPE 5.4649（旁路对照，方法学不同）
+- 写 `fp32_sintel_eval.py`（同 INT8 pipeline，apples-to-apples）
+- 跑 FP32 native-grid：**avg EPE 6.7915 / median 2.1971**
+- **ΔEPE (INT8 − FP32) = +0.1323（+1.9%）→ QAT 不立项**
+- Phase 2 闭环；Phase 3 (M2) 进入开局
 
 **新发现（已落 findings.md §10）：**
 - 标准 OpFlow EPE 必须在 GT 原分辨率算，否则数字被同比例压缩
-- INT8 vs 论文 FP32 ΔEPE ≈ +0.6；但需要本机严格 FP32 跑一次才算可靠 Δ
+- PTQ INT8 几乎无损（Δ=+0.13），高 EPE 长尾来自模型本身（input 157×203 + INT8 ±64px 动态范围 + 多尺度累加结构），不是量化
+- 想再降 EPE 必须动模型结构或输入分辨率，不是量化方式
 
 ---
 
@@ -66,8 +74,9 @@
 | Run | Model | Quant | Sintel split | #pairs | EPE (avg / med) | Notes |
 |-----|-------|-------|--------------|--------|-----------------|-------|
 | 2026-05-11 R1 | M1 mainline | PTQ INT8 | train clean | 1041 | 1.8472 / 0.6168 | **METHOD BUG**: pred-grid EPE，单位被压缩 ~3.66×；保留为 debug 参考，不可用 |
-| 2026-05-11 R2 | M1 mainline | PTQ INT8 | train clean | 1041 | **6.9238 / 2.3303** | native-grid (1024×436)，标准方法，可比论文 6.31；ΔEPE vs 论文 ≈ +0.6 |
-|     | M1 mainline | FP32 ckpt | train clean | — | TBD | next action — 本机严格跑一次 |
+| 2026-05-11 R2 | M1 mainline | PTQ INT8 | train clean | 1041 | **6.9238 / 2.3303** | native-grid (1024×436)，标准方法 |
+| 2026-05-11 R3 | M1 mainline | FP32 ckpt (test_sintel.py) | train clean | 1041 | 5.4649 / — | 旁路对照, ResizeNearestCrop @ 416×1024, 方法学不同, 不参与 Δ |
+| 2026-05-11 R4 | M1 mainline | **FP32 ckpt (native grid)** | train clean | 1041 | **6.7915 / 2.1971** | apples-to-apples vs R2; ΔEPE = +0.1323 → **QAT 不立项** |
 
 ---
 
@@ -80,10 +89,15 @@
 | `plan/MCUFlowNet_Deployment/progress.md` | created | meta | 本文件 |
 | `model_zoo/optical_flow/157x203/optical_flow_157x203_vela.tflite` | (exist) | 1 | Vela 编译产物，已烧 |
 | `tools/model_export/optical_flow_144x192/output/optical_flow_157x203.tflite` | (exist) | 1 | 未走 Vela，待评 |
-| `tools/eval/int8_sintel_eval.py` | created | 2 | INT8 evaluator, ~150 LOC, works |
-| `tools/eval/run_m1_int8_eval.sh` | created | 2 | one-shot wrapper for M1 |
-| `plan/MCUFlowNet_Deployment/m1_int8_sintel_clean.json` | created | 2 | EPE report (avg 1.847, n=1041) |
-| `plan/MCUFlowNet_Deployment/m1_int8_sintel_clean.log` | created | 2 | full run log + summary |
+| `tools/eval/int8_sintel_eval.py` | created | 2 | INT8 evaluator, `--eval-grid {native,pred}` |
+| `tools/eval/run_m1_int8_eval.sh` | created | 2 | INT8 wrapper |
+| `tools/eval/fp32_sintel_eval.py` | created | 2 | FP32 evaluator (TF1 graph, same pipeline as INT8) |
+| `tools/eval/run_m1_fp32_eval.sh` | created | 2 | FP32 wrapper via original test_sintel.py (416×1024) |
+| `tools/eval/run_m1_fp32_native_eval.sh` | created | 2 | FP32 wrapper via new evaluator (native grid) |
+| `plan/MCUFlowNet_Deployment/m1_int8_sintel_clean.json` | created | 2 | EPE report (pred-grid, BUG ref) |
+| `plan/MCUFlowNet_Deployment/m1_int8_sintel_clean_native.json` | created | 2 | EPE report (INT8 native, 6.92) |
+| `plan/MCUFlowNet_Deployment/m1_fp32_sintel_clean.log` | created | 2 | test_sintel.py log (5.46, side-channel) |
+| `plan/MCUFlowNet_Deployment/m1_fp32_sintel_clean_native.json` | created | 2 | EPE report (FP32 native, 6.79) |
 
 ---
 

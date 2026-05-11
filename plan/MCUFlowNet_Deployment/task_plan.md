@@ -6,7 +6,7 @@
 
 ## Current Phase
 
-Phase 2（M1 EPE 评估，QAT 决策铺垫）
+Phase 3（M2 EdgeFlowNAS retrain_v3 子网部署）— M1 Phase 1/2 已闭环，QAT 不需要
 
 ## Phases
 
@@ -18,13 +18,14 @@ Phase 2（M1 EPE 评估，QAT 决策铺垫）
 - [x] Windows flow_viewer.py 实时光流可视化（粗糙但可识别运动方向）
 - **Status:** complete
 
-### Phase 2: M1 Sintel EPE 评估 + QAT 决策 — **in_progress**
-- [ ] 写 INT8 TFLite EPE evaluator（基于 `EdgeFlowNet/code/test_sintel.py` 改写，加 tflite interpreter 路径）
-- [ ] FP32 baseline：用原 `test_sintel.py` 跑 `best.ckpt` 在 Sintel clean training 上 → 记录 EPE
-- [ ] INT8 evaluation：用新写的 evaluator 跑 `optical_flow_157x203.tflite` 在同样 Sintel 子集上 → 记录 EPE
-- [ ] 对比 FP32 vs INT8 EPE 差值 → 决策是否需要 QAT（阈值待定，先看绝对差距）
-- [ ] Discord 推送结果
-- **Status:** in_progress
+### Phase 2: M1 Sintel EPE 评估 + QAT 决策 — **complete**
+- [x] 写 INT8 TFLite EPE evaluator（`tools/eval/int8_sintel_eval.py`，支持 `--eval-grid {native,pred}`）
+- [x] 写 FP32 evaluator（`tools/eval/fp32_sintel_eval.py`，同 pipeline 同 grid，apples-to-apples）
+- [x] FP32 baseline (native grid)：6.7915 avg / 2.1971 median (1041 frames)
+- [x] INT8 evaluation (native grid)：6.9238 avg / 2.3303 median (1041 frames)
+- [x] **ΔEPE (INT8 − FP32) = +0.1323**，远低于 0.3 阈值 → **QAT 不立项**
+- [x] Discord 推送结果（INT8 阶段已推；FP32 完成后再推一次）
+- **Status:** complete
 
 ### Phase 3: M2 (EdgeFlowNAS retrain_v3 子网) 部署
 - [ ] 从 HPC 下载的权重 (`D:\Dataset\MCUFlowNet\EdgeFlowNAS\outputs\retrain_v3_ft3d\retrain_v3_ft3d_run1`) 适配到 export 脚本

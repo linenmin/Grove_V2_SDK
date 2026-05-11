@@ -122,11 +122,24 @@ evaluator (`tools/eval/int8_sintel_eval.py`) 加了 `--eval-grid {native,pred}`�
 
 ### 结论 / 下一步触发条件
 
-- ΔEPE ≈ +0.6（vs 论文 6.31）— 还需要严格跑一次 **本机 FP32 best.ckpt** 在 1024×436 评估才能给出 ΔEPE 的精确数值（之前的 6.31 来自记忆 / 论文，可能配置略有不同）。
-- 暂定 QAT 决策门槛：
-  - 严格 Δ < 0.3：PTQ 已经够，不做 QAT
-  - 0.3 ≤ Δ < 1.0：考虑做，但优先级低于 M2/M3 部署
-  - Δ ≥ 1.0：QAT 立项
+- 真正干净的 ΔEPE 必须用**同一 pipeline**（157×203 input → 160×208 pred → upsample 到 1024×436 + flow 缩放 → 在 GT 原分辨率算 EPE）。已新写 `tools/eval/fp32_sintel_eval.py`，复用同一 graph 构造（MultiScaleResNet, NumOut=4, 取 [...,0:2]）+ 同一 resize_flow_to 工具。
+- **苹果对苹果对比（2026-05-11，1041 帧 native grid）：**
+
+| 配置 | avg EPE | median EPE | per-frame elapsed |
+|---|---:|---:|---:|
+| FP32 best.ckpt (TF1 graph) | **6.7915** | 2.1971 | 267 ms |
+| PTQ INT8 (`optical_flow_157x203.tflite`) | **6.9238** | 2.3303 | 275 ms |
+| **ΔEPE (INT8 − FP32)** | **+0.1323** | +0.1332 | — |
+
+- **结论**：PTQ INT8 几乎无精度损失（相对 +1.9%）。**QAT 在 M1 上不需要**。
+- 旁路对照：原 `test_sintel.py` 默认 ResizeNearestCrop @ 416×1024 grid，FP32 = 5.4649。这是另一套方法学，**不参与 Δ 计算**；用户记忆中的 6.31 大概率属于这一类（接近但配置/clip_val 等细节略不同）。
+- Per-scene Δ：全部场景 INT8 vs FP32 偏差都在 ±0.5 以内；高 EPE 长尾来自 model 本身（输入 157×203 + 输出 INT8 ±64px 动态范围 + 多尺度累加结构），不是量化引入。
+
+### 量化决策最终结论（M1）
+
+- **PTQ INT8 已经足够，QAT 不立项**。Δ = +0.13 远低于先前定的 0.3 阈值。
+- 想再压精度只能动 **input 分辨率 / 网络结构 / 训练数据**，不是量化方式。
+- M2 retrain_v3 进入部署后，先复用同样 PTQ + 同样 evaluator 跑数；如果它的 Δ 突然变大，再考虑 QAT。
 
 ## 11. 决策悬而未决
 

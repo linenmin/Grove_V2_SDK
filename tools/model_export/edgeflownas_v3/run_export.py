@@ -168,6 +168,11 @@ def main():
     ap.add_argument("--model-name", required=True, choices=sorted(CANDIDATES.keys()))
     ap.add_argument("--ckpt-name", default="sintel_best",
                     help="filename stem under checkpoints/ (default sintel_best).")
+    ap.add_argument("--retrain-dir", default=RETRAIN_DIR,
+                    help="Override the experiment dir that holds the model_<name>/ "
+                         "subtrees. Default = original retrain_v3_ft3d_run1. For "
+                         "deploy_ft fine-tuned ckpts pass the deploy_ft experiment "
+                         "dir, e.g. .../outputs/retrain_v3_deploy_ft/retrain_v3_deploy_ft_run1.")
     ap.add_argument("--height", type=int, default=157)
     ap.add_argument("--width", type=int, default=203)
     ap.add_argument("--output-dir", default="")
@@ -176,7 +181,7 @@ def main():
     args = ap.parse_args()
 
     cand = CANDIDATES[args.model_name]
-    ckpt_prefix = os.path.join(RETRAIN_DIR, cand["ckpt_dir"], f"{args.ckpt_name}.ckpt")
+    ckpt_prefix = os.path.join(args.retrain_dir, cand["ckpt_dir"], f"{args.ckpt_name}.ckpt")
     if not os.path.exists(ckpt_prefix + ".index"):
         raise SystemExit(f"checkpoint index missing: {ckpt_prefix}.index")
 

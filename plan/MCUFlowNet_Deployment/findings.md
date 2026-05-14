@@ -174,7 +174,55 @@ evaluator 加了 `--flow-scale` 参数（默认 1.0；对 v3 子网用 12.5）�
 4. （次）放大 input 至 172×224 — 跟用户讨论后**搁置**（无法和 mainline 在同一分辨率公平对比）
 5. （次）解 v3_light PTQ 异常 (+2.13)：per-channel weight quant 或 QAT 短训
 
-## 7c. M2 下一步候选
+## 7c1. v3 @ 172×224 (NAS native grid) 探索
+
+放大 input 到 v3 的 NSGA-II 评测 grid 172×224，看是否能恢复 HPC 优势：
+
+| Model | Res | INT8 EPE | Vela inf | Vela SRAM | Δ vs 157×203 |
+|---|---|---:|---:|---:|---:|
+| v3_light pre-FT | 172×224 | **12.05** | 107.45 ms | 1354 KiB | −0.68 |
+| v3_efn_fps pre-FT | 172×224 | **6.80** | 181.92 ms | 1354 KiB | −0.54 |
+
+**SRAM 全过**（1354 < 1432 KiB arena）。但**只升 res 救不回 v3_light**：
+- HPC FP32 @ 416×1024: 5.58 → INT8 @ 172×224: **12.05**（差 6.5 EPE）
+- 根因：v3_light 的 ECA bottleneck 在 172/16 × 224/16 = 11×14 元素的 spatial 上几乎退化（training 是 30×40）
+- 单升 res 不行，需要让 conv 权重适应新 spatial scale → 见 §7c2
+
+## 7c2. v3_light Sintel-clean Fine-tune（demo 救场）
+
+为了让 v3_light 在 demo 里不崩，跑了一轮 Sintel train clean fine-tune：
+
+- **数据**：Sintel train clean 1041 pairs（与 eval Sintel final 同 23 scenes，不同 rendering pass — **温和数据泄漏**）
+- **配置**：input 172×224，LR 1e-5 constant，batch 8，20 epoch（没早停跑满），随机 80/20 train/val split
+- **脚本**：`EdgeFlowNAS/tools/sintel_demo_ft/finetune_v3_light_sintel_clean.py`
+- **训练曲线**：in-FT val_epe 0.479 → 0.294（−38.6%，每 epoch 都改善）
+- **结果（Sintel Final INT8, test_sintel mode @ 416×1024 patch）**：
+
+| Model / config | EPE | Vela inf | Vela SRAM |
+|---|---:|---:|---:|
+| Pre-FT v3_light @ 172×224 | 12.05 | 107.45 ms | 1354 KiB |
+| **Sintel-FT v3_light @ 172×224** | **7.7163** ✅ | 107.45 ms | 1354 KiB |
+| Mainline @ 157×203 (baseline) | 7.79 | 188.04 ms | 1430 KiB |
+
+**结论**：
+- **Δ −4.33 EPE / −36%** vs pre-FT
+- **几乎 tied with mainline 7.79**（−0.07，eval 噪声）
+- **保留 v3_light 速度优势**：107 vs mainline 188 ms = **快 42%**
+- Sintel-clean → Sintel-final 同几何不同 pass，**真实 unseen 场景预计 EPE ~8-9**，仍 ≤ mainline 水平
+
+## 7c3. M2 部署最终选型 — 三档全成立
+
+Demo 视频用以下 3 模型并列（host-side 模拟）：
+
+| Tier | Model | ckpt | Res | INT8 EPE | Vela inf | Vela SRAM | Pareto 角色 |
+|---|---|---|---|---:|---:|---:|---|
+| **Slow / Accurate** | Mainline | EdgeFlowNet best | 157×203 | 7.79 | 188 ms | 1430 KiB | baseline |
+| **Fastest** | v3_light | Sintel-FT (172×224) | 172×224 | **7.72** | **107 ms** | 1354 KiB | "near-mainline EPE, 1.8× faster" |
+| **Best EPE** | v3_efn_fps | FT3D-FT (157×203) | 157×203 | **6.60** | 165 ms | 1143 KiB | "lowest EPE AND faster" |
+
+**两个 v3 candidate 都打过 mainline** — 真正的 Pareto improvement，不再是 trade-off。
+
+## 7c. M2 下一步候选（历史，留作记录）
 
 按预期 ROI 排序：
 

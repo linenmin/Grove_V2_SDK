@@ -1,0 +1,127 @@
+{
+  "tflite": "/tmp/v3_172x224_v3_light/edgeflownas_v3_light_172x224.tflite",
+  "list": "/mnt/d/Dataset/MCUFlowNet/EdgeFlowNet/code/dataset_paths/MPI_Sintel_Final_train_list.txt",
+  "sintel_root": "/mnt/g/AI_thesis/datasets/MPI-Sintel-complete",
+  "ref_mode": "test_sintel",
+  "eval_grid": "native",
+  "clip_val": 50.0,
+  "patch_hw": [
+    416,
+    1024
+  ],
+  "n_frames": 1041,
+  "n_skipped": 0,
+  "elapsed_sec": 442.0133445262909,
+  "avg_epe": 12.048806411274114,
+  "median_epe": 10.548971176147461,
+  "in_shape": [
+    172,
+    224
+  ],
+  "out_shape": [
+    176,
+    224
+  ],
+  "in_quant": {
+    "scale": 1.0,
+    "zp": -128
+  },
+  "out_quant": {
+    "scale": 0.024213027209043503,
+    "zp": -55
+  },
+  "per_scene": {
+    "alley_1": {
+      "n": 49,
+      "epe_mean": 10.599108462430992
+    },
+    "alley_2": {
+      "n": 49,
+      "epe_mean": 9.13382276710199
+    },
+    "ambush_2": {
+      "n": 20,
+      "epe_mean": 26.960957098007203
+    },
+    "ambush_4": {
+      "n": 32,
+      "epe_mean": 22.736779034137726
+    },
+    "ambush_5": {
+      "n": 49,
+      "epe_mean": 14.96863571478396
+    },
+    "ambush_6": {
+      "n": 19,
+      "epe_mean": 19.639937852558337
+    },
+    "ambush_7": {
+      "n": 49,
+      "epe_mean": 9.470822032617063
+    },
+    "bamboo_1": {
+      "n": 49,
+      "epe_mean": 9.953613709430305
+    },
+    "bamboo_2": {
+      "n": 49,
+      "epe_mean": 10.763620833961332
+    },
+    "bandage_1": {
+      "n": 49,
+      "epe_mean": 10.532846003162618
+    },
+    "bandage_2": {
+      "n": 49,
+      "epe_mean": 11.048493492360018
+    },
+    "cave_2": {
+      "n": 49,
+      "epe_mean": 15.292293864853528
+    },
+    "cave_4": {
+      "n": 49,
+      "epe_mean": 10.067670462082843
+    },
+    "market_2": {
+      "n": 49,
+      "epe_mean": 10.584008868859739
+    },
+    "market_5": {
+      "n": 49,
+      "epe_mean": 19.87815467678771
+    },
+    "market_6": {
+      "n": 39,
+      "epe_mean": 10.582645391806578
+    },
+    "mountain_1": {
+      "n": 49,
+      "epe_mean": 8.625439429769711
+    },
+    "shaman_2": {
+      "n": 49,
+      "epe_mean": 9.685332239890585
+    },
+    "shaman_3": {
+      "n": 49,
+      "epe_mean": 6.036514389271638
+    },
+    "sleeping_1": {
+      "n": 49,
+      "epe_mean": 10.885631755906708
+    },
+    "sleeping_2": {
+      "n": 49,
+      "epe_mean": 12.189500224833585
+    },
+    "temple_2": {
+      "n": 49,
+      "epe_mean": 8.921113967895508
+    },
+    "temple_3": {
+      "n": 49,
+      "epe_mean": 15.447650851035604
+    }
+  }
+}

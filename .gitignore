@@ -41,3 +41,10 @@ we2_image_gen_local/Images*.txt
 .vscode/
 logs/
 model_zoo/**/_temp_*.bin
+
+# Local Python caches and generated experiment artifacts
+__pycache__/
+*.py[cod]
+*.log
+tools/demo_video/tflites/
+tools/model_export/**/output*/

@@ -44,7 +44,9 @@
 // Visualization is a required part of this optical-flow app. Buffers are now
 // allocated dynamically from the runtime SRAM budget using the model output
 // size, before the tensor arena is reserved.
-#define FLOW_VIZ_JPEG_BUF_MIN_BYTES 24576U
+// The actual allocation is max(output_pixels / 2, this floor). Keep the
+// preview reserve separate from model SRAM; encoder overflow returns failure.
+#define FLOW_VIZ_JPEG_BUF_MIN_BYTES 16384U
 #define FLOW_VIZ_RGB_BLOCK_ROWS 8U
 
 // Visualization Mode

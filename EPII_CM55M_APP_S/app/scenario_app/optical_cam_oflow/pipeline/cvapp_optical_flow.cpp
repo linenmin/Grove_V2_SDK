@@ -43,6 +43,7 @@
 #endif
 
 #include "common_config.h"
+#include "bench_model.h"
 
 // Shared optical-flow model parameters live in common_config.h.
 #define INPUT_IMAGE_CHANNELS FLOW_MODEL_CHANNELS
@@ -261,6 +262,18 @@ int cv_optical_flow_init(bool security_enable, bool privilege_enable, uint32_t m
     g_ctx.log_print_interval = 5;
 
     if (model_addr != 0) {
+        uint32_t model_crc = 0xffffffffU;
+        const uint8_t *model_bytes = (const uint8_t *)model_addr;
+        for (uint32_t i = 0; i < FLOW_BENCH_BYTES; ++i) {
+            model_crc ^= model_bytes[i];
+            for (int bit = 0; bit < 8; ++bit) {
+                model_crc = (model_crc >> 1) ^ (0xedb88320U & (0U - (model_crc & 1U)));
+            }
+        }
+        model_crc ^= 0xffffffffU;
+        xprintf("FLOW_MODEL %s crc=%08x %s\n", FLOW_BENCH_NAME, model_crc,
+                model_crc == FLOW_BENCH_CRC ? "PASS" : "FAIL");
+        if (model_crc != FLOW_BENCH_CRC) return -1;
         optical_flow_model = tflite::GetModel((const void *)model_addr);
 
         if (optical_flow_model->version() != TFLITE_SCHEMA_VERSION) {
@@ -476,7 +489,9 @@ int cv_optical_flow_run(struct_optical_flow_algoResult *algoresult_optical_flow)
         return -1;
     }
     ob_compute_checksum(curr_raw, g_raw_frame_bytes, &g_ctx.raw2_stats);
-    quantize_rgb_frame_inplace(curr_raw, curr_q, g_raw_frame_bytes);
+    for (size_t i = 0; i < g_raw_frame_bytes; ++i) {
+        curr_q[i] = flow_bench_input_lut[curr_raw[i]];
+    }
 
     if (!g_prev_frame_valid) {
         // 首帧：存入 prev 缓冲区，等待下一帧配对
@@ -505,6 +520,7 @@ int cv_optical_flow_run(struct_optical_flow_algoResult *algoresult_optical_flow)
     ob_perf_mark(&t_infer_start);
 
     const TfLiteStatus invoke_status = optical_flow_int_ptr->Invoke();
+    ob_perf_mark(&t_infer_end);
     if (invoke_status != kTfLiteOk) {
         xprintf("optical flow invoke fail\n");
         return -1;
@@ -514,7 +530,6 @@ int cv_optical_flow_run(struct_optical_flow_algoResult *algoresult_optical_flow)
     memcpy(g_prev_q_buffer, curr_q, g_raw_frame_bytes);
 
 
-    ob_perf_mark(&t_infer_end);
     ob_perf_mark(&t_total_end);
 
     g_ctx.sd_us = ob_perf_elapsed_us(&t_io_start, &t_io_end);
@@ -523,7 +538,8 @@ int cv_optical_flow_run(struct_optical_flow_algoResult *algoresult_optical_flow)
     g_ctx.total_us = ob_perf_elapsed_us(&t_total_start, &t_total_end);
 
     const float out_scale =
-        ((TfLiteAffineQuantization *)(optical_flow_output->quantization.params))->scale->data[0];
+        ((TfLiteAffineQuantization *)(optical_flow_output->quantization.params))->scale->data[0]
+        * FLOW_BENCH_OUTPUT_MULTIPLIER;
     const int out_zp =
         ((TfLiteAffineQuantization *)(optical_flow_output->quantization.params))->zero_point->data[0];
     const int8_t *out_data = optical_flow_output->data.int8;

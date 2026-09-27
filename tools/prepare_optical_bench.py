@@ -5,6 +5,7 @@ Run in the isolated TensorFlow conversion environment. Does not flash hardware.
 import argparse
 import hashlib
 import json
+import re
 from pathlib import Path
 import zlib
 import numpy as np
@@ -17,6 +18,14 @@ p.add_argument('--out', type=Path, required=True)
 a = p.parse_args()
 root = Path(__file__).resolve().parents[1]
 data = a.model.read_bytes()
+# Keep the historical slot when possible; larger models need an earlier start.
+flash_address = 0xB7B000 if len(data) <= 0x1000000 - 0xB7B000 else 0xA00000
+assert flash_address + len(data) <= 0x1000000
+common = root / 'EPII_CM55M_APP_S/app/scenario_app/optical_cam_oflow/config/common_config.h'
+common_text, count = re.subn(r'(#define OPTICAL_FLOW_MODEL_FLASH_ADDR )0x[0-9A-Fa-f]+',
+    lambda m: m[1] + f'0x{0x3A000000 + flash_address:08X}', common.read_text())
+assert count == 1
+common.write_text(common_text, encoding='utf-8')
 it = tf.lite.Interpreter(model_path=str(a.model))
 ii, oo = it.get_input_details()[0], it.get_output_details()[0]
 shape, output = ii['shape'].tolist(), oo['shape'].tolist()
@@ -42,7 +51,7 @@ header.write_text(
     encoding='utf-8')
 profile = dict(schema_version=1, id=name.lower(), mode='deploy', app='optical_cam_oflow', camera='OV5647',
     device=dict(vid='0x1A86', pid='0x55D3', baud=921600),
-    models=[dict(path=str(a.model.resolve()), sha256=hashlib.sha256(data).hexdigest(), address='0xB7B000', offset='0x0')],
+    models=[dict(path=str(a.model.resolve()), sha256=hashlib.sha256(data).hexdigest(), address=hex(flash_address), offset='0x0')],
     flash=dict(size='0x1000000', firmware_region=['0x0', '0x171000']),
     verify=dict(required=[f'FLOW_MODEL {name} crc={crc:08x} PASS', 'camera input init done',
         'Ethos-U55 device initialised', 'initial done'], forbidden_regex=['(?i)\\bfail(?:ed|ure)?\\b'],

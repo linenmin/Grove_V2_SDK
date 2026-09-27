@@ -24,7 +24,7 @@
 
 
 //0x3AB7B000 //(2220032 bytes => 0x21E000, set to 0x21E000)
-#define OPTICAL_FLOW_MODEL_FLASH_ADDR 0x3AB7B000
+#define OPTICAL_FLOW_MODEL_FLASH_ADDR 0x3AA00000
 
 // --- Optical Flow Firmware Common Configuration ---
 

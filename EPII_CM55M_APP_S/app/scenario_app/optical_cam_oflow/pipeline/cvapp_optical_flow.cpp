@@ -141,6 +141,9 @@ static void read_npu_output()
 #ifndef FLOW_BENCH_FIXTURE_COUNT
 #define FLOW_BENCH_FIXTURE_COUNT 0U
 #endif
+#ifndef FLOW_BENCH_DUMP_OUTPUT
+#define FLOW_BENCH_DUMP_OUTPUT 0
+#endif
 #if FLOW_BENCH_FIXTURE_COUNT > 0
 static uint32_t fixed_crc(const uint8_t *data, uint32_t length)
 {
@@ -153,6 +156,32 @@ static uint32_t fixed_crc(const uint8_t *data, uint32_t length)
     return crc ^ 0xffffffffU;
 }
 
+#if FLOW_BENCH_DUMP_OUTPUT
+static void dump_fixed_output(uint32_t index)
+{
+    static const char hex[] = "0123456789abcdef";
+    const uint8_t *data = (const uint8_t *)optical_flow_output->data.int8;
+    xprintf("FLOW_Q_BEGIN index=%u bytes=%u crc=%08x\n", (unsigned)index,
+            (unsigned)FLOW_BENCH_OUTPUT_BYTES,
+            (unsigned)fixed_crc(data, FLOW_BENCH_OUTPUT_BYTES));
+    // A small stack line avoids another tensor-sized SRAM allocation.
+    for (uint32_t offset = 0; offset < FLOW_BENCH_OUTPUT_BYTES; offset += 64U) {
+        char line[129];
+        const uint32_t count = (FLOW_BENCH_OUTPUT_BYTES - offset < 64U)
+            ? FLOW_BENCH_OUTPUT_BYTES - offset : 64U;
+        for (uint32_t i = 0; i < count; ++i) {
+            const uint8_t value = data[offset + i];
+            line[2U * i] = hex[value >> 4];
+            line[2U * i + 1U] = hex[value & 15U];
+        }
+        line[2U * count] = '\0';
+        xprintf("FLOW_Q index=%u offset=%u data=%s\n", (unsigned)index,
+                (unsigned)offset, line);
+    }
+    xprintf("FLOW_Q_END index=%u\n", (unsigned)index);
+}
+#endif
+
 static bool validate_fixed_inputs()
 {
     const uint8_t *blob = (const uint8_t *)FLOW_BENCH_FIXTURE_ADDR;
@@ -163,6 +192,7 @@ static bool validate_fixed_inputs()
         xprintf("FLOW_FIXED_FAIL fixture_crc_or_io\n");
         return false;
     }
+    bool all_pass = true;
     for (uint32_t n = 0; n < FLOW_BENCH_FIXTURE_COUNT; ++n) {
         const uint8_t *input = blob + n * (FLOW_BENCH_INPUT_BYTES + FLOW_BENCH_OUTPUT_BYTES);
         const int8_t *expected = (const int8_t *)(input + FLOW_BENCH_INPUT_BYTES);
@@ -197,7 +227,17 @@ static bool validate_fixed_inputs()
         xprintf("FLOW_FIXED index=%u max_q=%u sum_abs_q=%u changed=%u components=%u %s\n",
                 (unsigned)n, (unsigned)maximum, (unsigned)sum, (unsigned)changed,
                 (unsigned)FLOW_BENCH_OUTPUT_BYTES, pass ? "PASS" : "FAIL");
+#if FLOW_BENCH_DUMP_OUTPUT
+        dump_fixed_output(n);
+        // Collect every fixture for diagnosis, but never time a failing model.
+        if (!pass) all_pass = false;
+#else
         if (!pass) return false;
+#endif
+    }
+    if (!all_pass) {
+        xprintf("FLOW_FIXED_FAIL numerical count=%u\n", (unsigned)FLOW_BENCH_FIXTURE_COUNT);
+        return false;
     }
     xprintf("FLOW_FIXED_PASS count=%u\n", (unsigned)FLOW_BENCH_FIXTURE_COUNT);
     // Five warmups and twenty measured calls; preprocessing/copy/CRC stay outside timing.

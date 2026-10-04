@@ -240,6 +240,10 @@ static bool validate_fixed_inputs()
         return false;
     }
     xprintf("FLOW_FIXED_PASS count=%u\n", (unsigned)FLOW_BENCH_FIXTURE_COUNT);
+#if defined(FLOW_BENCH_DIAGNOSTIC_ONLY) && FLOW_BENCH_DIAGNOSTIC_ONLY
+    xprintf("FLOW_FIXED_DIAGNOSTIC_DONE count=%u\n", (unsigned)FLOW_BENCH_FIXTURE_COUNT);
+    return true;
+#endif
     // Five warmups and twenty measured calls; preprocessing/copy/CRC stay outside timing.
     for (uint32_t n = 0; n < 25U; ++n) {
         memcpy(optical_flow_input->data.int8, blob, FLOW_BENCH_INPUT_BYTES);

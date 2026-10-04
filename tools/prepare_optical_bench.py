@@ -17,9 +17,13 @@ p.add_argument('--out', type=Path, required=True)
 p.add_argument('--export-report', type=Path,
     help='Accepted export.json; bypass historical model-name convention defaults')
 p.add_argument('--fixtures', type=Path, help='Fixed-input fixtures.bin/json directory')
-p.add_argument('--diagnostic-four-channel', action='store_true',
+diagnostics = p.add_mutually_exclusive_group()
+diagnostics.add_argument('--diagnostic-four-channel', action='store_true',
     help='Only for accepted final-slice removal diagnostics; dump four channels and skip timing')
+diagnostics.add_argument('--diagnostic-fixed-output', action='store_true',
+    help='Dump all three fixed u/v outputs and skip timing; requires accepted export and fixtures')
 a = p.parse_args()
+diagnostic = a.diagnostic_four_channel or a.diagnostic_fixed_output
 root = Path(__file__).resolve().parents[1]
 data = a.model.read_bytes()
 # Keep the historical slot when possible; larger models need an earlier start.
@@ -66,6 +70,8 @@ if a.diagnostic_four_channel:
     assert exported['constant_buffers_byte_exact']
 else:
     assert output[-1] == 2
+    if a.diagnostic_fixed_output:
+        assert a.export_report and a.fixtures
 scale, zero = ii['quantization']
 assert scale > 0
 x = np.arange(256, dtype=np.float32)
@@ -78,6 +84,8 @@ crc = zlib.crc32(data)
 name = f'{a.name}-{shape[2]}x{shape[1]}'
 if a.diagnostic_four_channel:
     name += '-full4-diagnostic'
+elif a.diagnostic_fixed_output:
+    name += '-fixed-output-diagnostic'
 fixture_header = '#define FLOW_BENCH_FIXTURE_COUNT 0U\n'
 fixture_models = []; fixture_required = []
 if a.fixtures:
@@ -104,7 +112,7 @@ if a.fixtures:
         f'#define FLOW_BENCH_OUTPUT_BYTES {f["output_bytes"]}U\n')
     fixture_models = [dict(path=str(blob_path.resolve()),sha256=f['blob_sha256'],address=hex(address),offset='0x0')]
     fixture_required = ['FLOW_FIXED_PASS count=3',
-        'FLOW_FIXED_DIAGNOSTIC_DONE count=3' if a.diagnostic_four_channel else
+        'FLOW_FIXED_DIAGNOSTIC_DONE count=3' if diagnostic else
         'FLOW_FIXED_PERF_DONE warmup=5 measured=20']
 a.out.mkdir(parents=True, exist_ok=False)
 header = root / 'EPII_CM55M_APP_S/app/scenario_app/optical_cam_oflow/config/bench_model.h'
@@ -113,7 +121,7 @@ header.write_text(
     f'#define FLOW_BENCH_NAME "{name}"\n#define FLOW_BENCH_BYTES {len(data)}U\n'
     f'#define FLOW_BENCH_CRC 0x{crc:08x}U\n'
     f'#define FLOW_BENCH_OUTPUT_MULTIPLIER {multiplier}f\n' + fixture_header +
-    ('#define FLOW_BENCH_DUMP_OUTPUT 1\n#define FLOW_BENCH_DIAGNOSTIC_ONLY 1\n' if a.diagnostic_four_channel else '') +
+    ('#define FLOW_BENCH_DUMP_OUTPUT 1\n#define FLOW_BENCH_DIAGNOSTIC_ONLY 1\n' if diagnostic else '') +
     'static const int8_t flow_bench_input_lut[256] = {' + ','.join(map(str, lut.tolist())) + '};\n',
     encoding='utf-8')
 profile = dict(schema_version=1, id=name.lower(), mode='deploy', app='optical_cam_oflow', camera='OV5647',
@@ -122,15 +130,17 @@ profile = dict(schema_version=1, id=name.lower(), mode='deploy', app='optical_ca
     flash=dict(size='0x1000000', firmware_region=['0x0', '0x171000']),
     verify=dict(required=[f'FLOW_MODEL {name} crc={crc:08x} PASS', 'camera input init done',
         'Ethos-U55 device initialised', 'initial done']+fixture_required, forbidden_regex=['(?i)\\bfail(?:ed|ure)?\\b', '(?i)hardfault'],
-        input_shape=shape, output_shape=output, min_frames=0 if a.diagnostic_four_channel else 3, frame_resolution=[output[2], output[1]]),
+        input_shape=shape, output_shape=output, min_frames=0 if diagnostic else 3, frame_resolution=[output[2], output[1]]),
     notes=('Four-channel final-slice diagnosis only; CPU u/v unchanged; timing disabled; not a benchmark model.'
            if a.diagnostic_four_channel else
+           'Fixed-output numerical diagnosis only; model and fixtures unchanged; timing disabled; not a benchmark result.'
+           if a.diagnostic_fixed_output else
            'Camera runtime check; LUT matches host INT8 preprocessing; CRC checks flash content, not cryptographic attestation. JPEG is not EPE evidence.'))
 common.write_text(common_text, encoding='utf-8')
 (a.out / 'profile.json').write_text(json.dumps(profile, indent=2) + '\n', encoding='utf-8')
 (a.out / 'bench_model.h').write_bytes(header.read_bytes())
 (a.out / 'io.json').write_text(json.dumps(dict(input_quantization=ii['quantization'],
     output_quantization=oo['quantization'], input_lut=lut.tolist(), crc32=f'{crc:08x}',
-    output_multiplier=multiplier,input_convention='normalized' if normalized else 'raw',
+    output_multiplier=multiplier,input_convention='normalized' if normalized else 'raw',diagnostic_only=diagnostic,
     export_report_sha256=hashlib.sha256(a.export_report.read_bytes()).hexdigest() if a.export_report else None), indent=2) + '\n', encoding='utf-8')
 print(a.out / 'profile.json')

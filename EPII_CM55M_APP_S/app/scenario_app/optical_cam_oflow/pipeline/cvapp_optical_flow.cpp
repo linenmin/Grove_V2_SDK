@@ -114,6 +114,28 @@ static bool g_prev_frame_valid = false;
 
 static ob_runtime_ctx_t g_ctx = {};
 
+// The current Ethos-U driver synchronises its scratch base only. TFLM gives
+// external input/output tensors separate base pointers, so the application
+// must synchronise those as well. CPU inference must never invalidate its
+// freshly written CPU output.
+static void prepare_npu_io()
+{
+#if !FLOW_USE_CPU_INFERENCE
+    hx_CleanDCache_by_Addr((volatile void *)optical_flow_input->data.int8,
+                          optical_flow_input->bytes);
+    hx_CleanDCache_by_Addr((volatile void *)optical_flow_output->data.int8,
+                          optical_flow_output->bytes);
+#endif
+}
+
+static void read_npu_output()
+{
+#if !FLOW_USE_CPU_INFERENCE
+    hx_InvalidateDCache_by_Addr((volatile void *)optical_flow_output->data.int8,
+                               optical_flow_output->bytes);
+#endif
+}
+
 // Fixtures live in a separate mapped flash slot; no extra SRAM buffers.
 // Existing profiles omit the count and retain normal camera behaviour.
 #ifndef FLOW_BENCH_FIXTURE_COUNT
@@ -145,10 +167,25 @@ static bool validate_fixed_inputs()
         const uint8_t *input = blob + n * (FLOW_BENCH_INPUT_BYTES + FLOW_BENCH_OUTPUT_BYTES);
         const int8_t *expected = (const int8_t *)(input + FLOW_BENCH_INPUT_BYTES);
         memcpy(optical_flow_input->data.int8, input, FLOW_BENCH_INPUT_BYTES);
+        const uint32_t input_crc = fixed_crc((const uint8_t *)optical_flow_input->data.int8,
+                                             FLOW_BENCH_INPUT_BYTES);
+        if (input_crc != fixed_crc(input, FLOW_BENCH_INPUT_BYTES)) {
+            xprintf("FLOW_FIXED_FAIL input_copy index=%u\n", (unsigned)n);
+            return false;
+        }
+        prepare_npu_io();
         if (optical_flow_int_ptr->Invoke() != kTfLiteOk) {
             xprintf("FLOW_FIXED_FAIL invoke index=%u\n", (unsigned)n);
             return false;
         }
+        const uint32_t cached_crc = fixed_crc((const uint8_t *)optical_flow_output->data.int8,
+                                              FLOW_BENCH_OUTPUT_BYTES);
+        read_npu_output();
+        const uint32_t coherent_crc = fixed_crc((const uint8_t *)optical_flow_output->data.int8,
+                                                FLOW_BENCH_OUTPUT_BYTES);
+        xprintf("FLOW_CACHE index=%u input_crc=%08x before_read_sync=%08x after_read_sync=%08x expected=%08x\n",
+                (unsigned)n, (unsigned)input_crc, (unsigned)cached_crc, (unsigned)coherent_crc,
+                (unsigned)fixed_crc((const uint8_t *)expected, FLOW_BENCH_OUTPUT_BYTES));
         uint32_t maximum = 0U, sum = 0U, changed = 0U;
         for (uint32_t i = 0; i < FLOW_BENCH_OUTPUT_BYTES; ++i) {
             const uint32_t difference = (uint32_t)abs((int)optical_flow_output->data.int8[i] - (int)expected[i]);
@@ -166,10 +203,12 @@ static bool validate_fixed_inputs()
     // Five warmups and twenty measured calls; preprocessing/copy/CRC stay outside timing.
     for (uint32_t n = 0; n < 25U; ++n) {
         memcpy(optical_flow_input->data.int8, blob, FLOW_BENCH_INPUT_BYTES);
+        prepare_npu_io();
         ob_perf_stamp_t start, end;
         ob_perf_mark(&start);
         const TfLiteStatus status = optical_flow_int_ptr->Invoke();
         ob_perf_mark(&end);
+        read_npu_output();
         if (status != kTfLiteOk) { xprintf("FLOW_FIXED_FAIL repeat_invoke\n"); return false; }
         if (n >= 5U)
             xprintf("FLOW_FIXED_PERF repeat=%u infer_us=%u\n", (unsigned)(n - 5U),
@@ -585,11 +624,13 @@ int cv_optical_flow_run(struct_optical_flow_algoResult *algoresult_optical_flow)
 
     compute_checksum_from_q(curr_q, g_raw_frame_bytes, &g_ctx.raw2_stats);
 
+    prepare_npu_io();
     ob_perf_mark(&t_preproc_end);
     ob_perf_mark(&t_infer_start);
 
     const TfLiteStatus invoke_status = optical_flow_int_ptr->Invoke();
     ob_perf_mark(&t_infer_end);
+    read_npu_output();
     if (invoke_status != kTfLiteOk) {
         xprintf("optical flow invoke fail\n");
         return -1;

@@ -114,6 +114,72 @@ static bool g_prev_frame_valid = false;
 
 static ob_runtime_ctx_t g_ctx = {};
 
+// Fixtures live in a separate mapped flash slot; no extra SRAM buffers.
+// Existing profiles omit the count and retain normal camera behaviour.
+#ifndef FLOW_BENCH_FIXTURE_COUNT
+#define FLOW_BENCH_FIXTURE_COUNT 0U
+#endif
+#if FLOW_BENCH_FIXTURE_COUNT > 0
+static uint32_t fixed_crc(const uint8_t *data, uint32_t length)
+{
+    uint32_t crc = 0xffffffffU;
+    for (uint32_t i = 0; i < length; ++i) {
+        crc ^= data[i];
+        for (int bit = 0; bit < 8; ++bit)
+            crc = (crc >> 1) ^ (0xedb88320U & (0U - (crc & 1U)));
+    }
+    return crc ^ 0xffffffffU;
+}
+
+static bool validate_fixed_inputs()
+{
+    const uint8_t *blob = (const uint8_t *)FLOW_BENCH_FIXTURE_ADDR;
+    if (fixed_crc(blob, FLOW_BENCH_FIXTURE_BYTES) != FLOW_BENCH_FIXTURE_CRC ||
+        optical_flow_input->type != kTfLiteInt8 || optical_flow_output->type != kTfLiteInt8 ||
+        optical_flow_input->bytes != FLOW_BENCH_INPUT_BYTES ||
+        optical_flow_output->bytes != FLOW_BENCH_OUTPUT_BYTES) {
+        xprintf("FLOW_FIXED_FAIL fixture_crc_or_io\n");
+        return false;
+    }
+    for (uint32_t n = 0; n < FLOW_BENCH_FIXTURE_COUNT; ++n) {
+        const uint8_t *input = blob + n * (FLOW_BENCH_INPUT_BYTES + FLOW_BENCH_OUTPUT_BYTES);
+        const int8_t *expected = (const int8_t *)(input + FLOW_BENCH_INPUT_BYTES);
+        memcpy(optical_flow_input->data.int8, input, FLOW_BENCH_INPUT_BYTES);
+        if (optical_flow_int_ptr->Invoke() != kTfLiteOk) {
+            xprintf("FLOW_FIXED_FAIL invoke index=%u\n", (unsigned)n);
+            return false;
+        }
+        uint32_t maximum = 0U, sum = 0U, changed = 0U;
+        for (uint32_t i = 0; i < FLOW_BENCH_OUTPUT_BYTES; ++i) {
+            const uint32_t difference = (uint32_t)abs((int)optical_flow_output->data.int8[i] - (int)expected[i]);
+            if (difference > maximum) maximum = difference;
+            sum += difference;
+            if (difference != 0U) ++changed;
+        }
+        const bool pass = maximum <= 2U && (uint64_t)sum * 20U <= FLOW_BENCH_OUTPUT_BYTES;
+        xprintf("FLOW_FIXED index=%u max_q=%u sum_abs_q=%u changed=%u components=%u %s\n",
+                (unsigned)n, (unsigned)maximum, (unsigned)sum, (unsigned)changed,
+                (unsigned)FLOW_BENCH_OUTPUT_BYTES, pass ? "PASS" : "FAIL");
+        if (!pass) return false;
+    }
+    xprintf("FLOW_FIXED_PASS count=%u\n", (unsigned)FLOW_BENCH_FIXTURE_COUNT);
+    // Five warmups and twenty measured calls; preprocessing/copy/CRC stay outside timing.
+    for (uint32_t n = 0; n < 25U; ++n) {
+        memcpy(optical_flow_input->data.int8, blob, FLOW_BENCH_INPUT_BYTES);
+        ob_perf_stamp_t start, end;
+        ob_perf_mark(&start);
+        const TfLiteStatus status = optical_flow_int_ptr->Invoke();
+        ob_perf_mark(&end);
+        if (status != kTfLiteOk) { xprintf("FLOW_FIXED_FAIL repeat_invoke\n"); return false; }
+        if (n >= 5U)
+            xprintf("FLOW_FIXED_PERF repeat=%u infer_us=%u\n", (unsigned)(n - 5U),
+                    (unsigned)ob_perf_elapsed_us(&start, &end));
+    }
+    xprintf("FLOW_FIXED_PERF_DONE warmup=5 measured=20\n");
+    return true;
+}
+#endif
+
 static bool load_model_io_metadata(const tflite::Model *model)
 {
     if (model == nullptr || model->subgraphs() == nullptr || model->subgraphs()->size() <= 0) {
@@ -445,6 +511,9 @@ int cv_optical_flow_init(bool security_enable, bool privilege_enable, uint32_t m
 
     }
 
+#if FLOW_BENCH_FIXTURE_COUNT > 0
+    if (!validate_fixed_inputs()) return -1;
+#endif
     xprintf("initial done\n");
     return ercode;
 }

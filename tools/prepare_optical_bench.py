@@ -169,7 +169,7 @@ profile = dict(schema_version=1, id=name.lower(), mode='deploy', app='optical_ca
         input_shape=shape, output_shape=output, min_frames=0 if diagnostic else 3, frame_resolution=[output[2], output[1]]),
     notes=('Four-channel final-slice diagnosis only; CPU u/v unchanged; timing disabled; not a benchmark model.'
            if a.diagnostic_four_channel else
-           'Fixed-output numerical diagnosis only; model and fixtures unchanged; timing disabled; not a benchmark result.'
+           'Fixed-output numerical diagnosis only; model pinned to accepted export and fixtures to supplied hashes; timing disabled; not a benchmark result.'
            if a.diagnostic_fixed_output else
            'Internal activation numerical diagnosis only; two original tensors; reference CPU kernel; no EPE, timing or camera inference.'
            if a.diagnostic_activations else

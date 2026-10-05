@@ -45,6 +45,10 @@
 #include "common_config.h"
 #include "bench_model.h"
 
+#ifndef FLOW_BENCH_OUTPUT_COUNT
+#define FLOW_BENCH_OUTPUT_COUNT 1U
+#endif
+
 // Shared optical-flow model parameters live in common_config.h.
 #define INPUT_IMAGE_CHANNELS FLOW_MODEL_CHANNELS
 #define OPTICAL_FLOW_INPUT_TENSOR_CHANNEL FLOW_MODEL_CHANNELS
@@ -123,16 +127,20 @@ static void prepare_npu_io()
 #if !FLOW_USE_CPU_INFERENCE
     hx_CleanDCache_by_Addr((volatile void *)optical_flow_input->data.int8,
                           optical_flow_input->bytes);
-    hx_CleanDCache_by_Addr((volatile void *)optical_flow_output->data.int8,
-                          optical_flow_output->bytes);
+    for (uint32_t n = 0; n < FLOW_BENCH_OUTPUT_COUNT; ++n) {
+        TfLiteTensor *output = optical_flow_int_ptr->output(n);
+        hx_CleanDCache_by_Addr((volatile void *)output->data.int8, output->bytes);
+    }
 #endif
 }
 
 static void read_npu_output()
 {
 #if !FLOW_USE_CPU_INFERENCE
-    hx_InvalidateDCache_by_Addr((volatile void *)optical_flow_output->data.int8,
-                               optical_flow_output->bytes);
+    for (uint32_t n = 0; n < FLOW_BENCH_OUTPUT_COUNT; ++n) {
+        TfLiteTensor *output = optical_flow_int_ptr->output(n);
+        hx_InvalidateDCache_by_Addr((volatile void *)output->data.int8, output->bytes);
+    }
 #endif
 }
 
@@ -145,13 +153,27 @@ static void read_npu_output()
 #define FLOW_BENCH_DUMP_OUTPUT 0
 #endif
 #if FLOW_BENCH_FIXTURE_COUNT > 0
-static uint32_t fixed_crc(const uint8_t *data, uint32_t length)
+static uint32_t fixed_crc_update(uint32_t crc, const uint8_t *data, uint32_t length)
 {
-    uint32_t crc = 0xffffffffU;
     for (uint32_t i = 0; i < length; ++i) {
         crc ^= data[i];
         for (int bit = 0; bit < 8; ++bit)
             crc = (crc >> 1) ^ (0xedb88320U & (0U - (crc & 1U)));
+    }
+    return crc;
+}
+
+static uint32_t fixed_crc(const uint8_t *data, uint32_t length)
+{
+    return fixed_crc_update(0xffffffffU, data, length) ^ 0xffffffffU;
+}
+
+static uint32_t fixed_output_crc()
+{
+    uint32_t crc = 0xffffffffU;
+    for (uint32_t n = 0; n < FLOW_BENCH_OUTPUT_COUNT; ++n) {
+        const TfLiteTensor *output = optical_flow_int_ptr->output(n);
+        crc = fixed_crc_update(crc, (const uint8_t *)output->data.int8, output->bytes);
     }
     return crc ^ 0xffffffffU;
 }
@@ -160,23 +182,28 @@ static uint32_t fixed_crc(const uint8_t *data, uint32_t length)
 static void dump_fixed_output(uint32_t index)
 {
     static const char hex[] = "0123456789abcdef";
-    const uint8_t *data = (const uint8_t *)optical_flow_output->data.int8;
     xprintf("FLOW_Q_BEGIN index=%u bytes=%u crc=%08x\n", (unsigned)index,
             (unsigned)FLOW_BENCH_OUTPUT_BYTES,
-            (unsigned)fixed_crc(data, FLOW_BENCH_OUTPUT_BYTES));
+            (unsigned)fixed_output_crc());
     // A small stack line avoids another tensor-sized SRAM allocation.
-    for (uint32_t offset = 0; offset < FLOW_BENCH_OUTPUT_BYTES; offset += 64U) {
-        char line[129];
-        const uint32_t count = (FLOW_BENCH_OUTPUT_BYTES - offset < 64U)
-            ? FLOW_BENCH_OUTPUT_BYTES - offset : 64U;
-        for (uint32_t i = 0; i < count; ++i) {
-            const uint8_t value = data[offset + i];
-            line[2U * i] = hex[value >> 4];
-            line[2U * i + 1U] = hex[value & 15U];
+    uint32_t base = 0U;
+    for (uint32_t n = 0; n < FLOW_BENCH_OUTPUT_COUNT; ++n) {
+        const TfLiteTensor *output = optical_flow_int_ptr->output(n);
+        const uint8_t *data = (const uint8_t *)output->data.int8;
+        for (uint32_t offset = 0; offset < output->bytes; offset += 64U) {
+            char line[129];
+            const uint32_t count = (output->bytes - offset < 64U)
+                ? output->bytes - offset : 64U;
+            for (uint32_t i = 0; i < count; ++i) {
+                const uint8_t value = data[offset + i];
+                line[2U * i] = hex[value >> 4];
+                line[2U * i + 1U] = hex[value & 15U];
+            }
+            line[2U * count] = '\0';
+            xprintf("FLOW_Q index=%u offset=%u data=%s\n", (unsigned)index,
+                    (unsigned)(base + offset), line);
         }
-        line[2U * count] = '\0';
-        xprintf("FLOW_Q index=%u offset=%u data=%s\n", (unsigned)index,
-                (unsigned)offset, line);
+        base += output->bytes;
     }
     xprintf("FLOW_Q_END index=%u\n", (unsigned)index);
 }
@@ -186,10 +213,39 @@ static bool validate_fixed_inputs()
 {
     const uint8_t *blob = (const uint8_t *)FLOW_BENCH_FIXTURE_ADDR;
     if (fixed_crc(blob, FLOW_BENCH_FIXTURE_BYTES) != FLOW_BENCH_FIXTURE_CRC ||
-        optical_flow_input->type != kTfLiteInt8 || optical_flow_output->type != kTfLiteInt8 ||
+        optical_flow_input->type != kTfLiteInt8 ||
         optical_flow_input->bytes != FLOW_BENCH_INPUT_BYTES ||
-        optical_flow_output->bytes != FLOW_BENCH_OUTPUT_BYTES) {
+        optical_flow_int_ptr->outputs_size() != FLOW_BENCH_OUTPUT_COUNT) {
         xprintf("FLOW_FIXED_FAIL fixture_crc_or_io\n");
+        return false;
+    }
+    uint32_t total_bytes = 0U;
+    for (uint32_t k = 0; k < FLOW_BENCH_OUTPUT_COUNT; ++k) {
+        const TfLiteTensor *output = optical_flow_int_ptr->output(k);
+        if (output == nullptr || output->type != kTfLiteInt8) {
+            xprintf("FLOW_FIXED_FAIL output_type tensor=%u\n", (unsigned)k);
+            return false;
+        }
+#if FLOW_BENCH_OUTPUT_COUNT > 1
+        if (output->bytes != flow_bench_output_bytes[k] || output->dims->size != 4) {
+            xprintf("FLOW_FIXED_FAIL output_shape tensor=%u\n", (unsigned)k);
+            return false;
+        }
+        for (uint32_t d = 0; d < 4U; ++d) {
+            if (output->dims->data[d] != flow_bench_output_shapes[k][d]) {
+                xprintf("FLOW_FIXED_FAIL output_dim tensor=%u\n", (unsigned)k);
+                return false;
+            }
+        }
+        xprintf("FLOW_PROBE_IO tensor=%u label=%s shape=%d,%d,%d,%d bytes=%u\n",
+                (unsigned)k, flow_bench_output_names[k], output->dims->data[0],
+                output->dims->data[1], output->dims->data[2], output->dims->data[3],
+                (unsigned)output->bytes);
+#endif
+        total_bytes += output->bytes;
+    }
+    if (total_bytes != FLOW_BENCH_OUTPUT_BYTES) {
+        xprintf("FLOW_FIXED_FAIL output_total_bytes\n");
         return false;
     }
     bool all_pass = true;
@@ -208,20 +264,31 @@ static bool validate_fixed_inputs()
             xprintf("FLOW_FIXED_FAIL invoke index=%u\n", (unsigned)n);
             return false;
         }
-        const uint32_t cached_crc = fixed_crc((const uint8_t *)optical_flow_output->data.int8,
-                                              FLOW_BENCH_OUTPUT_BYTES);
+        const uint32_t cached_crc = fixed_output_crc();
         read_npu_output();
-        const uint32_t coherent_crc = fixed_crc((const uint8_t *)optical_flow_output->data.int8,
-                                                FLOW_BENCH_OUTPUT_BYTES);
+        const uint32_t coherent_crc = fixed_output_crc();
         xprintf("FLOW_CACHE index=%u input_crc=%08x before_read_sync=%08x after_read_sync=%08x expected=%08x\n",
                 (unsigned)n, (unsigned)input_crc, (unsigned)cached_crc, (unsigned)coherent_crc,
                 (unsigned)fixed_crc((const uint8_t *)expected, FLOW_BENCH_OUTPUT_BYTES));
         uint32_t maximum = 0U, sum = 0U, changed = 0U;
-        for (uint32_t i = 0; i < FLOW_BENCH_OUTPUT_BYTES; ++i) {
-            const uint32_t difference = (uint32_t)abs((int)optical_flow_output->data.int8[i] - (int)expected[i]);
-            if (difference > maximum) maximum = difference;
-            sum += difference;
-            if (difference != 0U) ++changed;
+        uint32_t base = 0U;
+        for (uint32_t k = 0; k < FLOW_BENCH_OUTPUT_COUNT; ++k) {
+            const TfLiteTensor *output = optical_flow_int_ptr->output(k);
+            uint32_t probe_max = 0U, probe_sum = 0U, probe_changed = 0U;
+            for (uint32_t i = 0; i < output->bytes; ++i) {
+                const uint32_t difference = (uint32_t)abs((int)output->data.int8[i] - (int)expected[base+i]);
+                if (difference > probe_max) probe_max = difference;
+                probe_sum += difference;
+                if (difference != 0U) ++probe_changed;
+            }
+#if FLOW_BENCH_OUTPUT_COUNT > 1
+            xprintf("FLOW_PROBE index=%u tensor=%u label=%s max_q=%u sum_abs_q=%u changed=%u components=%u\n",
+                    (unsigned)n, (unsigned)k, flow_bench_output_names[k],
+                    (unsigned)probe_max, (unsigned)probe_sum, (unsigned)probe_changed,
+                    (unsigned)output->bytes);
+#endif
+            if (probe_max > maximum) maximum = probe_max;
+            sum += probe_sum; changed += probe_changed; base += output->bytes;
         }
         const bool pass = maximum <= 2U && (uint64_t)sum * 20U <= FLOW_BENCH_OUTPUT_BYTES;
         xprintf("FLOW_FIXED index=%u max_q=%u sum_abs_q=%u changed=%u components=%u %s\n",
@@ -605,6 +672,11 @@ int cv_optical_flow_run(struct_optical_flow_algoResult *algoresult_optical_flow)
 {
     int ercode = 0;
     memset(algoresult_optical_flow, 0, sizeof(struct_optical_flow_algoResult));
+
+#if defined(FLOW_BENCH_DIAGNOSTIC_ONLY) && FLOW_BENCH_DIAGNOSTIC_ONLY
+    // Intermediate feature tensors must never enter optical-flow rendering.
+    return ercode;
+#endif
 
     if (optical_flow_int_ptr == nullptr) {
         return ercode;

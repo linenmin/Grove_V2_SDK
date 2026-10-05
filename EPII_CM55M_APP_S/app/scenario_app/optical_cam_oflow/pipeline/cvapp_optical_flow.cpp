@@ -387,7 +387,12 @@ static bool load_model_io_metadata(const tflite::Model *model)
         return false;
     }
 
-    if (g_model_out_w <= 0 || g_model_out_h <= 0 || g_model_out_c < 2) {
+    // Internal two-output probes may expose a one-channel feature tensor.
+    if (g_model_out_w <= 0 || g_model_out_h <= 0 || g_model_out_c <= 0
+#if FLOW_BENCH_OUTPUT_COUNT == 1
+        || g_model_out_c < 2
+#endif
+    ) {
         xprintf("output dims invalid: h=%d w=%d c=%d\n",
                 g_model_out_h,
                 g_model_out_w,

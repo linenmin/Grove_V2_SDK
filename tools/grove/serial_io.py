@@ -2,6 +2,19 @@
 import time
 from pathlib import Path
 
+RESET_HOLD = 0.2
+
+
+def pulse_reset(port, hold=RESET_HOLD):
+    """Reboot the WE2 into its 1st-stage bootloader, same as the RESET button.
+
+    RTS and DTR must rise together; either line alone does nothing. Verified on the
+    CH343 bridge serial 5AB9069839 (2026-10-11); other boards are untested.
+    """
+    port.rts, port.dtr = True, True
+    time.sleep(hold)
+    port.rts, port.dtr = False, False
+
 
 def ports():
     from serial.tools.list_ports import comports
@@ -18,7 +31,7 @@ def select_port(profile, port=None, serial_number=None):
     return matches[0]
 
 
-def capture(device, baud, seconds, output, ready=print, serial_factory=None):
+def capture(device, baud, seconds, output, ready=print, serial_factory=None, auto_reset=False):
     if serial_factory is None:
         import serial
         serial_factory = serial.Serial
@@ -32,8 +45,14 @@ def capture(device, baud, seconds, output, ready=print, serial_factory=None):
         port.open()
         # Do not flush input: a boot may already be buffered.
         with (output / 'uart.bin').open('wb', buffering=0) as stream:
+            note = ('Host sends an RTS+DTR reset pulse now.' if auto_reset else
+                    'Press RESET now if boot evidence is needed. Opening COM can affect reset lines.')
             ready({'state': 'listening', 'device': device, 'seconds': seconds, 'run': str(output),
-                   'stop': str(output / 'STOP'), 'note': 'Press RESET now if boot evidence is needed. Opening COM can affect reset lines.'})
+                   'stop': str(output / 'STOP'), 'note': note})
+            if auto_reset:
+                time.sleep(0.3)
+                pulse_reset(port)
+                ready({'state': 'reset_pulse_sent'})
             deadline = time.monotonic() + seconds
             while time.monotonic() < deadline and not (output / 'STOP').exists():
                 chunk = port.read(8192)

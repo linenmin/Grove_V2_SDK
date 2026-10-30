@@ -59,6 +59,7 @@ def main():
     p.add_argument('--serial')
     p.add_argument('--execute', action='store_true')
     p.add_argument('--timeout', type=int, default=300)
+    p.add_argument('--auto-reset', action='store_true', help='Reset from the host by an RTS+DTR pulse instead of the RESET button (verified on serial 5AB9069839 only)')
     p.add_argument('--runs', default=str(ROOT / 'runs'))
     p = sub.add_parser('monitor', help='Receive UART only; save log, frames and verification')
     p.add_argument('--profile', required=True)
@@ -66,6 +67,7 @@ def main():
     p.add_argument('--serial')
     p.add_argument('--seconds', type=float, default=15)
     p.add_argument('--runs', default=str(ROOT / 'runs'))
+    p.add_argument('--auto-reset', action='store_true', help='Send one RTS+DTR reset pulse right after listening starts')
     p = sub.add_parser('verify', help='Verify an existing log against explicit model expectations')
     p.add_argument('--profile', required=True)
     p.add_argument('--log', required=True)
@@ -91,7 +93,8 @@ def main():
         from grove.serial_io import select_port
         device = select_port(profile, args.port, args.serial)
         manifest = Path(args.bundle).resolve()
-        command = [sys.executable, str(ROOT / 'xmodem/xmodem_send.py'), '--port', device['port'],
+        sender = ROOT / ('tools/grove/xmodem_autoreset.py' if args.auto_reset else 'xmodem/xmodem_send.py')
+        command = [sys.executable, str(sender), '--port', device['port'],
                    '--baudrate', str(profile['device']['baud']), '--protocol', 'xmodem',
                    '--file', str(manifest.parent / bundle['firmware']['path']), '--overall-timeout', str(args.timeout)]
         for model in bundle['models']:
@@ -102,7 +105,9 @@ def main():
             return 0
         run = new_run(args.runs, 'flash')
         write_json(run / 'bundle.json', bundle)
-        emit({'state': 'waiting_for_bootloader', 'run': str(run), 'action': 'Press RESET while flasher waits; do not open another serial client.'})
+        action = ('Host sends an RTS+DTR reset pulse 1 s after the flasher opens the port' if args.auto_reset
+                  else 'Press RESET while flasher waits') + '; do not open another serial client.'
+        emit({'state': 'waiting_for_bootloader', 'run': str(run), 'action': action})
         try:
             with (run / 'flash.log').open('w', encoding='utf-8') as stream:
                 result = subprocess.run(command, stdout=stream, stderr=subprocess.STDOUT, timeout=args.timeout + 5)
@@ -148,8 +153,10 @@ def main():
         from grove.serial_io import select_port, capture
         device = select_port(profile, args.port, args.serial)
         run = new_run(args.runs, 'monitor')
-        write_json(run / 'session.json', {'profile': profile, 'device': device, 'started_at': datetime.now(timezone.utc).isoformat()})
-        capture(device, profile['device']['baud'], args.seconds, run, emit)
+        write_json(run / 'session.json', {'profile': profile, 'device': device, 'auto_reset': args.auto_reset,
+                                          'started_at': datetime.now(timezone.utc).isoformat()})
+        # Pass auto_reset only when set: some run scripts replace capture with the old signature.
+        capture(device, profile['device']['baud'], args.seconds, run, emit, **({'auto_reset': True} if args.auto_reset else {}))
         log = run / 'uart.bin'
     else:
         log = Path(args.log).resolve(strict=True)

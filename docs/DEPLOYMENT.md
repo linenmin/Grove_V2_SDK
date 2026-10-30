@@ -28,19 +28,19 @@ python tools/grovectl.py build --profile deployments/profiles/optical-flow-157x2
 ```text
 python tools/grovectl.py package --profile deployments/profiles/optical-flow-157x203.json --firmware /path/to/firmware.img --out /path/to/new-bundle
 python tools/grovectl.py flash --bundle /path/to/new-bundle/bundle.json --serial YOUR_USB_SERIAL
-python tools/grovectl.py flash --bundle /path/to/new-bundle/bundle.json --serial YOUR_USB_SERIAL --execute
+python tools/grovectl.py flash --bundle /path/to/new-bundle/bundle.json --serial YOUR_USB_SERIAL --execute --auto-reset
 ```
 
 package复制真实固件/模型并保存SHA256。flash默认只展示计划，--execute执行已授权的刷写。核对artifact哈希、容量与区间重叠，支持多模型，v1只支持零模型偏移。布局必须先依据目标固件确认。
 
 IMG真实分区未由静态解析器验证；任意IMG与profile并不自动兼容。优先使用该profile构建产物并审阅build-context.txt。板端版本/哈希回读尚未实现；主机哈希不等于板端身份认证。
 
-Windows Python直接操作COM，无须先转交WSL。关闭monitor/浏览器/viewer后刷写；出现等待提示再按RESET。默认总超时300秒，失败停止，不自动换模型或擦除重试。
+Windows Python直接操作COM，无须先转交WSL。关闭monitor/浏览器/viewer后刷写；出现等待提示后复位，复位方式见[grove-deploy skill](../skills/grove-deploy/SKILL.md)。默认总超时300秒，失败停止，不自动换模型或擦除重试。
 
 ## 运行验收
 
 ```text
-python tools/grovectl.py monitor --profile deployments/profiles/optical-flow-157x203.json --serial YOUR_USB_SERIAL --seconds 120
+python tools/grovectl.py monitor --profile deployments/profiles/optical-flow-157x203.json --serial YOUR_USB_SERIAL --seconds 120 --auto-reset
 ```
 
-收到listening再按RESET。传输完成不等于部署验收；按[测试规范](TESTING.md)检查I/O、推理、实际帧、数值和性能。本版没有通用张量输入固件，新增任务需要相应协议适配。
+收到listening后再复位（方式同上）。传输完成不等于部署验收；按[测试规范](TESTING.md)检查I/O、推理、实际帧、数值和性能。本版没有通用张量输入固件，新增任务需要相应协议适配。

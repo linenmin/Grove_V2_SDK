@@ -15,7 +15,7 @@ python tools/grovectl.py profile deployments/profiles/optical-flow-observed-172x
 python tools/grovectl.py monitor --profile deployments/profiles/optical-flow-observed-172x224.json --seconds 120
 ```
 
-monitor出现listening后再按RESET；先按后监听可能漏日志。新建运行目录下的STOP空文件可提前结束。串口打开可能影响复位线；monitor不发送设备数据。输出原始uart.bin、summary.json和少量帧；先读摘要，不粘贴base64。退出码3表示验收条件不足，也可能只是缺启动日志。
+需要启动日志时，monitor出现listening后再复位；先复位后监听可能漏日志。复位方式（本机板由主机拉RTS+DTR复位，不请用户按键）见[grove-deploy skill](../skills/grove-deploy/SKILL.md)。新建运行目录下的STOP空文件可提前结束。串口打开可能影响复位线；monitor不发送设备数据。输出原始uart.bin、summary.json和少量帧；先读摘要，不粘贴base64。退出码3表示验收条件不足，也可能只是缺启动日志。
 
 ## 按需阅读
 

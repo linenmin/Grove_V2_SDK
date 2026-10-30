@@ -44,6 +44,26 @@ xmodemRecType = {b'\x06' : 'ACK', b'\x15' : 'NAK'}
 xmodemSndType = {0x01 : 'SOH', 0x02 : 'STX', 0x04 : 'EOT', 0x10 : 'DLE', 0xC : 'CRC', 0x18 : 'CAN'}
 send_bin_total_packtets = 0
 
+# Host wrapper supplies a total deadline; serial timeouts alone do not bound menu loops.
+deadline = None
+
+def check_deadline():
+    if deadline is not None and time.monotonic() >= deadline:
+        raise TimeoutError('Overall XMODEM operation timed out')
+
+def bounded_readline():
+    check_deadline()
+    return ser.readline()
+
+def parse_model_arg(value):
+    # Split from the right so Windows paths with spaces survive argument parsing.
+    parts = value.rsplit(None, 2)
+    if len(parts) != 3:
+        raise ValueError('Use --model="FILE ADDRESS OFFSET" (explicit offset required)')
+    int(parts[1], 16)
+    int(parts[2], 16)
+    return parts
+
 def callback(total_packets, success_count, error_count):
     #print('packets {0} '.format(total_packets) + ' success {0}'.format(success_count) + ' error {0}'.format(error_count))
 
@@ -64,7 +84,7 @@ def callback(total_packets, success_count, error_count):
 
         print(progress, end="")
         percent = total_packets/send_bin_total_packtets
-        
+
         if percent >= 1:
             print("\n")
 
@@ -93,9 +113,11 @@ def dev_init():
         sys.exit(-1)
 
 def send_at_command(command):
+    check_deadline()
     ser.write(bytes(command+"\r", encoding='ascii'))
 
 def getc_user(size, timeout=1):
+    check_deadline()
     return ser.read(size)
 
     #gbytes = ser.read(size)
@@ -107,6 +129,7 @@ def getc_user(size, timeout=1):
     #return gbytes or None
 
 def putc_user(data, timeout=1):
+    check_deadline()
     return ser.write(data)
 
     #pbytes = ser.write(data)
@@ -132,7 +155,7 @@ def xmodem_send_bin():
     print("Please press reset button!!")
 
     while(True):
-        response = ser.readline().strip()
+        response = bounded_readline().strip()
         print(str(response))
         send_at_command('1')
 
@@ -158,7 +181,7 @@ def xmodem_send_bin():
         stream = open(image_file, 'rb')
         ret = modem.send(stream, callback=callback)
         stream.close()
-        
+
         if (ret) :
             print("xmodem_send bin file done!!")
             _wait_reboot_system = True
@@ -172,14 +195,14 @@ def xmodem_send_bin():
     idx = 0
 
     while (idx < len(model_list)):
-        model_arg = model_list[idx].split(" ")
-        
+        model_arg = parse_model_arg(model_list[idx])
+
         if (len(model_arg) < 2) :
             print("--model error parameter")
             return False
 
         while(_wait_reboot_system):
-            response = ser.readline().strip()        
+            response = bounded_readline().strip()
             if (str(response).count('Do you want to end file transmission and reboot system? (y)') > 0) :
                 break
 
@@ -187,17 +210,17 @@ def xmodem_send_bin():
         ser.flushInput()
         send_at_command('n')
 
-        model_file = model_list[idx].split(" ")[0]
+        model_file = model_arg[0]
         model_file_dir = os.path.dirname(os.path.realpath(model_file))
         preamble_data = '_temp_model_' + str(idx) + '_preamble_data.bin'
         preamble_data_filepath = os.path.join(model_file_dir, preamble_data)
         print("generate {0} for {1} preamble data".format(preamble_data, model_file))
 
-        model_position = int(model_list[idx].split(" ")[1], 16)
+        model_position = int(model_arg[1], 16)
         model_offset = 0
         if (len(model_arg) > 2) :
-            model_offset = int(model_list[idx].split(" ")[2], 16)
-            
+            model_offset = int(model_arg[2], 16)
+
         header = [0xC0, 0x5A] + list(model_position.to_bytes(4, 'little')) + list(model_offset.to_bytes(4, 'little')) + [0x5A, 0xC0] + [0xFF] * (packtet_size - 12)
         idx = idx + 1
 
@@ -218,7 +241,7 @@ def xmodem_send_bin():
             return ret
 
         while(True):
-            response = ser.readline().strip()        
+            response = bounded_readline().strip()
             if (str(response).count('Do you want to end file transmission and reboot system? (y)') > 0) :
                 break
 
@@ -246,35 +269,48 @@ if __name__ == '__main__':
                         required=True, type=str,
                         help="Serial device port: COMn for windows; /dev/ttyUSBn,/dev/ttySn for unix; /dev/tty.usbserial-abcde for MacOS")
     parser.add_argument("--file",
-                        #required=True, 
+                        #required=True,
                         type=str,
                         help="File path for sending bin file")
     parser.add_argument("--baudrate",
                         default=DEF_BAUDRATE, type=lambda x: int(x,0),
                         help="Serial device baudrate. Default is " + str(DEF_BAUDRATE))
-    parser.add_argument("--protocol", 
+    parser.add_argument("--protocol",
                         default=DEF_PROTOCOL, type=str,
-                        choices=PROTOCOL, 
+                        choices=PROTOCOL,
                         help="File transfer protocol. Default is " + DEF_PROTOCOL)
     parser.add_argument("--model", type=str, action='append', help='--model="bin_file flash_address_hex offset_hex"')
     parser.add_argument("--timeout",
                         default=DEF_TIMEOUT, type=lambda x: int(x,0),
                         help="Serial device timeout. Default is " + str(DEF_TIMEOUT))
 
+    parser.add_argument("--overall-timeout", type=float, default=300,
+                        help="Total transfer/menu timeout in seconds")
     args = parser.parse_args()
-
-    dev_init()
-    print('Device init successfully')
-
-    ret = xmodem_send_bin()
-    print("xmodem_send bin file result = ",ret)
-
-    # show message after send 
-    while(True):
-        response = ser.readline().strip()
-        print(str(response))
-        if str(response) == "b'Do you want to end file transmission and reboot system? (y)'":
-            print("\nFirmware upgrade completed, restart WE2 ...\n")
-            send_at_command('y')
-    
-            break
+    if args.overall_timeout <= 0:
+        parser.error("overall-timeout must be positive")
+    args.timeout = min(args.timeout, 1)
+    deadline = time.monotonic() + args.overall_timeout
+    try:
+        # Fail before opening hardware when any input is missing or malformed.
+        if args.file and not os.path.isfile(args.file):
+            raise FileNotFoundError(args.file)
+        for item in args.model or []:
+            if not os.path.isfile(parse_model_arg(item)[0]):
+                raise FileNotFoundError(parse_model_arg(item)[0])
+        dev_init()
+        ret = xmodem_send_bin()
+        if not ret:
+            raise RuntimeError('XMODEM transfer failed')
+        while True:
+            response = bounded_readline().strip()
+            if b'Do you want to end file transmission and reboot system? (y)' in response:
+                send_at_command('y')
+                print('Firmware transfer completed; runtime verification still required.')
+                break
+    except Exception as exc:
+        print('ERROR:', exc, file=sys.stderr)
+        sys.exit(1)
+    finally:
+        if 'ser' in globals() and ser.is_open:
+            ser.close()

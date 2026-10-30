@@ -1,0 +1,161 @@
+{
+  "schema_version": 1,
+  "models": [
+    {
+      "path": "model_zoo/kws_pdm_record/kwt1_relu_mfcc_fvp_aligned_vela.tflite",
+      "bytes": 903456,
+      "sha256": "5f2a3115438fa4a2d98e59d0a002e7d4163d7ee7b465d4a29a09c224a829c563",
+      "validation": "historical asset; no new deployment claim"
+    },
+    {
+      "path": "model_zoo/optical_cam_oflow/sram_test_modified_vela.tflite",
+      "bytes": 2468672,
+      "sha256": "e1d46b5d00cd442eeef2802a05e6eb0f3fb8376c308351804c01b1e441f48032",
+      "validation": "historical asset; no new deployment claim"
+    },
+    {
+      "path": "model_zoo/optical_cam_oflow/validated_144x192_from_external_vela.tflite",
+      "bytes": 2468672,
+      "sha256": "e1d46b5d00cd442eeef2802a05e6eb0f3fb8376c308351804c01b1e441f48032",
+      "validation": "historical asset; no new deployment claim"
+    },
+    {
+      "path": "model_zoo/optical_flow/144x192/optical_flow_144x192_vela.tflite",
+      "bytes": 2468128,
+      "sha256": "93d2bc1a2962894ffc39d7607a823df43a1ce4a84e337a38def208a5240473f9",
+      "validation": "historical asset; no new deployment claim"
+    },
+    {
+      "path": "model_zoo/optical_flow/155x206/optical_flow_155x206_vela.tflite",
+      "bytes": 2468672,
+      "sha256": "c7b5d76ed2aac0de010d02d9923459a4e8aa9c9d874435d58d30867179cd3e73",
+      "validation": "historical asset; no new deployment claim"
+    },
+    {
+      "path": "model_zoo/optical_flow/156x204/optical_flow_156x204_vela.tflite",
+      "bytes": 2468656,
+      "sha256": "61a153dee787ccfce34d3eaf4bbc9c29bcac0eadc36f098e7b0babf0f2b5cc27",
+      "validation": "historical asset; no new deployment claim"
+    },
+    {
+      "path": "model_zoo/optical_flow/157x203/optical_flow_157x203.tflite",
+      "bytes": 2821304,
+      "sha256": "fc1211e3ae20c5ad22b2e3334317fd046882963fa86903b721afb54675fd9331",
+      "validation": "historical asset; no new deployment claim"
+    },
+    {
+      "path": "model_zoo/optical_flow/157x203/optical_flow_157x203_vela.tflite",
+      "bytes": 2468688,
+      "sha256": "8d3f78a41cd91d77d2ef15181a871855907e96a0454fec22e3607491289fb23d",
+      "validation": "historical asset; no new deployment claim"
+    },
+    {
+      "path": "model_zoo/optical_flow/158x202/optical_flow_158x202_vela.tflite",
+      "bytes": 2468688,
+      "sha256": "9962415c695e564a37df0ea0a2906796231332bf319f02a61dd1f5fcc98399ac",
+      "validation": "historical asset; no new deployment claim"
+    },
+    {
+      "path": "model_zoo/optical_flow/160x208/optical_flow_160x208_vela.tflite",
+      "bytes": 2468656,
+      "sha256": "10defc7510febbdc48d6e5b16100608476e265e16650e8b8eb1c7b58544733d4",
+      "validation": "historical asset; no new deployment claim"
+    },
+    {
+      "path": "model_zoo/optical_flow/edgeflownas_v3/v3_acc/157x203/edgeflownas_v3_acc_157x203_vela.tflite",
+      "bytes": 5950288,
+      "sha256": "453ce5c3370f7d3631685e2cd15909029ef42769d1107f1a5422051b82953565",
+      "validation": "historical asset; no new deployment claim"
+    },
+    {
+      "path": "model_zoo/optical_flow/edgeflownas_v3/v3_efn_fps/157x203/edgeflownas_v3_efn_fps_157x203_vela.tflite",
+      "bytes": 5488256,
+      "sha256": "165b7f65a7d1f0a182f68ab7ec59434ff5326ea089441b5996e9fd79596754e2",
+      "validation": "historical asset; no new deployment claim"
+    },
+    {
+      "path": "model_zoo/optical_flow/edgeflownas_v3/v3_efn_fps/157x203_ft3d_ft/edgeflownas_v3_efn_fps_157x203.tflite",
+      "bytes": 6030672,
+      "sha256": "c27c2721cdc6e42146ed16ea8ea1ac28ab3b74d02d1281d8c5527fb2fc05b79c",
+      "validation": "historical asset; no new deployment claim"
+    },
+    {
+      "path": "model_zoo/optical_flow/edgeflownas_v3/v3_efn_fps/157x203_ft3d_ft/edgeflownas_v3_efn_fps_157x203_vela.tflite",
+      "bytes": 5488032,
+      "sha256": "0c728abf7c0a6a26bdfb7be72621d3e92b6f7fba98b10cb64e46d8d97c20cff9",
+      "validation": "historical asset; no new deployment claim"
+    },
+    {
+      "path": "model_zoo/optical_flow/edgeflownas_v3/v3_light/157x203/edgeflownas_v3_light_157x203_vela.tflite",
+      "bytes": 2459840,
+      "sha256": "016bf25c374e4b2243f91d955a5346819649cbc7063fefef657046ef56862948",
+      "validation": "historical asset; no new deployment claim"
+    },
+    {
+      "path": "model_zoo/optical_flow/edgeflownas_v3/v3_light/172x224_sintel_clean_ft/edgeflownas_v3_light_172x224.tflite",
+      "bytes": 2719424,
+      "sha256": "32979db5469557ecf17d00721bd29088e2d1003d5d8dc3ffa3f72571c362e88d",
+      "validation": "historical asset; no new deployment claim"
+    },
+    {
+      "path": "model_zoo/optical_flow/edgeflownas_v3/v3_light/172x224_sintel_clean_ft/edgeflownas_v3_light_172x224_vela.tflite",
+      "bytes": 2466064,
+      "sha256": "a384d2427bfe902e5cdfb2a16fff20c15c5cd730f9c967b3dd1008506ff330b5",
+      "validation": "historical asset; no new deployment claim"
+    },
+    {
+      "path": "model_zoo/tflm_fd_fm/0_fd_0x200000.tflite",
+      "bytes": 469808,
+      "sha256": "daf1f309853c66354f9659332efa7003cc1f12f4112e90da993a6d3aa6cdfa0e",
+      "validation": "historical asset; no new deployment claim"
+    },
+    {
+      "path": "model_zoo/tflm_fd_fm/1_fm_0x280000.tflite",
+      "bytes": 688176,
+      "sha256": "2b775dbf9c4637804f3e381b3659fecd7a290a675385af1861bcad0d2d7aa76b",
+      "validation": "historical asset; no new deployment claim"
+    },
+    {
+      "path": "model_zoo/tflm_fd_fm/2_il_0x32A000.tflite",
+      "bytes": 788688,
+      "sha256": "cc358a51e3dd14a3e6523c531a06023cde574d1da289d59f28b9fc76a2172901",
+      "validation": "historical asset; no new deployment claim"
+    },
+    {
+      "path": "model_zoo/tflm_yolo11_od/yolo11n_full_integer_quant_192_241219_batch_matmul_vela.tflite",
+      "bytes": 2041472,
+      "sha256": "9d0433f30b931ac52e7bb8b14b91754de7a9482e16e3d875e0b1f11cc8dc911f",
+      "validation": "historical asset; no new deployment claim"
+    },
+    {
+      "path": "model_zoo/tflm_yolo11_od/yolo11n_full_integer_quant_vela_imgz_224_kris_nopost_241230.tflite",
+      "bytes": 2031024,
+      "sha256": "f0f83b3c3f9be8a7a22ef3e11e2b97ecc7466b94fc5af1e40f1ccd1c80d0a351",
+      "validation": "historical asset; no new deployment claim"
+    },
+    {
+      "path": "model_zoo/tflm_yolov8_gender_cls/0_fd_0x200000.tflite",
+      "bytes": 469808,
+      "sha256": "daf1f309853c66354f9659332efa7003cc1f12f4112e90da993a6d3aa6cdfa0e",
+      "validation": "historical asset; no new deployment claim"
+    },
+    {
+      "path": "model_zoo/tflm_yolov8_gender_cls/1_gender_cls_0x280000.tflite",
+      "bytes": 1254736,
+      "sha256": "72a5a88ea7d4784474419166b259128b50dcb9a1f9eed30b94891476c6daa40d",
+      "validation": "historical asset; no new deployment claim"
+    },
+    {
+      "path": "model_zoo/tflm_yolov8_od/yolov8n_od_192_delete_transpose_0xB7B000.tflite",
+      "bytes": 2213248,
+      "sha256": "b18827c54e01976fa5023ff00a6d8eb4fbbb3c3ee2fcfbaf404f0d18976c5fae",
+      "validation": "historical asset; no new deployment claim"
+    },
+    {
+      "path": "model_zoo/tflm_yolov8_pose/yolov8n_pose_256_vela_3_9_0x3BB000.tflite",
+      "bytes": 2303104,
+      "sha256": "54bbc4d04772cef2959b384c3a754119e6fa12b5ef31ad5d1f6628a6a4abcee7",
+      "validation": "historical asset; no new deployment claim"
+    }
+  ]
+}

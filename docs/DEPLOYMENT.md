@@ -1,110 +1,46 @@
-# Optical Flow Deployment Baseline
+# 多模型部署协议
 
-本文件只描述 **当前确认有效** 的部署主线，不记录历史试错过程。
+## Profile
 
-如果你是第一次接手仓库，先看：
+JSON schema_version=1，每个明确模型/应用组合一份。相对模型路径以仓库根为基准。profile命令验证结构与文件哈希。
 
-- [docs/START_HERE.md](/home/enmin/Seeed_Grove_Vision_AI_Module_V2/docs/START_HERE.md)
-- [docs/MINIMAL_DEPLOYMENT.md](/home/enmin/Seeed_Grove_Vision_AI_Module_V2/docs/MINIMAL_DEPLOYMENT.md)
+- mode=observe：只描述观察预期，不允许构建/打包/刷写。
+- mode=deploy：选择真实SDK app，指定模型SHA256、相机、Flash布局、I/O和成功/失败条件。
+- verify.required：必须出现的应用标志；forbidden_regex：错误模式。
+- input_shape/output_shape：可选，用于输出model io日志的固件。
+- min_frames/frame_resolution：可选图像验收。无图像的数值应用设min_frames=0并使用明确应用结果标志；其他协议需扩展解析器。
 
-## 1. 当前唯一有效基线
+参考 [157×203配置](../deployments/profiles/optical-flow-157x203.json)，它固定仓库历史模型，不是当前板上172×224的身份。profile不能代替C/C++的预处理、算子注册、相机驱动或任务输出适配。新模型须核对这些接口。
 
-- 模型分辨率：`157x203`
-- 输入张量：`[1,157,203,6]`
-- 输出张量：`[1,160,208,2]`
-- 输出量化：`scale ≈ 0.407547`, `zp = -4`
-- 可视化结果：`INVOKE resolution = [208,160]`，输出为光流图
+## 构建（不访问USB）
 
-## 2. 当前不要作为默认主线的状态
+Linux/WSL须安装make、Arm GNU 13.2.Rel1（gcc 13.2.1）、flock及SDK打包器依赖并加入PATH。Windows build调用默认WSL。
 
-以下状态目前仅保留为实验记录：
-
-- `144x192 -> 144x192` 模型
-- `150x200 -> 160x208` 模型
-- 当前仓库中的 `model_zoo/optical_cam_oflow/sram_test_modified_vela.tflite`
-
-原因：
-
-- `144x192` 虽然可工作，但不是当前 `1432 KiB` arena 下的最大稳定输入。
-- `150x200 -> 160x208` 以及更大的若干实验模型会触发运行期内存失败或 fallback。
-- 最终要么 `cv_optical_flow_init fail`，要么 `INVOKE.image` 回退成 `320x240` 相机 JPEG，而不是光流渲染图。
-
-## 3. 当前有效部署流程
-
-### Step 1：准备 `157x203` 模型
-
-当前推荐入口已经切换到仓库内导出脚本：
-
-```bash
-bash /home/enmin/Seeed_Grove_Vision_AI_Module_V2/scripts/export_optical_flow_144x192.sh
+```text
+python tools/grovectl.py build --profile deployments/profiles/optical-flow-157x203.json --dry-run
+python tools/grovectl.py build --profile deployments/profiles/optical-flow-157x203.json --runs /path/to/runs
 ```
 
-说明：
+每次clean，避免跨app复用对象；同checkout有构建锁。保存日志、ELF、IMG、编译器/Git状态。dry-run不能代替真实编译验收。
 
-- 导出逻辑已经复制并内聚到本仓库。
-- 默认发布模型路径是：
-  `/home/enmin/Seeed_Grove_Vision_AI_Module_V2/model_zoo/optical_flow/157x203/optical_flow_157x203_vela.tflite`
-- 当前脚本名仍保留 `144x192` 历史名字，但默认导出参数已经切到 `157x203`。
-- 具体覆盖方式见
-  [docs/MODEL_EXPORT.md](/home/enmin/Seeed_Grove_Vision_AI_Module_V2/docs/MODEL_EXPORT.md)。
+## 打包与刷写
 
-模型验证标准：
-
-- 输入必须是 `157x203x6`
-- 输出必须是 `160x208x2`
-- 当前验证过的运行上限是 `157x203`
-
-### Step 2：烧录固件和模型
-
-使用现有 pipeline 脚本进行 with-model 烧录：
-
-```bash
-bash .agent/skills/we2-optical-sd-pipeline/scripts/run_optical_pipeline.sh \
-  --mode with-model \
-  --app-type optical_cam_oflow \
-  --port /dev/ttyACM0 \
-  --skip-build \
-  --capture-seconds 10 \
-  --keyword 'initial done' \
-  --keyword 'INVOKE' \
-  --extract-frames \
-  --max-frames 3 \
-  --model-arg '/home/enmin/Seeed_Grove_Vision_AI_Module_V2/model_zoo/optical_flow/157x203/optical_flow_157x203_vela.tflite 0xB7B000 0x00000'
+```text
+python tools/grovectl.py package --profile deployments/profiles/optical-flow-157x203.json --firmware /path/to/firmware.img --out /path/to/new-bundle
+python tools/grovectl.py flash --bundle /path/to/new-bundle/bundle.json --serial YOUR_USB_SERIAL
+python tools/grovectl.py flash --bundle /path/to/new-bundle/bundle.json --serial YOUR_USB_SERIAL --execute
 ```
 
-## 4. 成功判据
+package复制真实固件/模型并保存SHA256。flash默认只展示计划，--execute执行已授权的刷写。核对artifact哈希、容量与区间重叠，支持多模型，v1只支持零模型偏移。布局必须先依据目标固件确认。
 
-串口日志中必须同时看到：
+IMG真实分区未由静态解析器验证；任意IMG与profile并不自动兼容。优先使用该profile构建产物并审阅build-context.txt。板端版本/哈希回读尚未实现；主机哈希不等于板端身份认证。
 
-- `model io: in(h=157,w=203,c=6) out(h=160,w=208,c=2)`
-- `[out_tensor=0] ... dims=[1,160,208,2]`
-- `INVOKE ... "resolution": [208, 160]`
+Windows Python直接操作COM，无须先转交WSL。关闭monitor/浏览器/viewer后刷写；出现等待提示再按RESET。默认总超时300秒，失败停止，不自动换模型或擦除重试。
 
-提取帧中应看到：
+## 运行验收
 
-- 不是相机原图
-- 而是暗色 / 伪彩 / 随运动变化的光流可视化图
+```text
+python tools/grovectl.py monitor --profile deployments/profiles/optical-flow-157x203.json --serial YOUR_USB_SERIAL --seconds 120
+```
 
-## 5. 当前关键文件
-
-- 部署脚本：
-  [run_optical_pipeline.sh](/home/enmin/Seeed_Grove_Vision_AI_Module_V2/.agent/skills/we2-optical-sd-pipeline/scripts/run_optical_pipeline.sh)
-- 导出脚本：
-  [export_optical_flow_144x192.sh](/home/enmin/Seeed_Grove_Vision_AI_Module_V2/scripts/export_optical_flow_144x192.sh)
-- 导出说明：
-  [docs/MODEL_EXPORT.md](/home/enmin/Seeed_Grove_Vision_AI_Module_V2/docs/MODEL_EXPORT.md)
-- 当前默认模型：
-  [optical_flow_157x203_vela.tflite](/home/enmin/Seeed_Grove_Vision_AI_Module_V2/model_zoo/optical_flow/157x203/optical_flow_157x203_vela.tflite)
-- 现有场景代码：
-  [cvapp_optical_flow.cpp](/home/enmin/Seeed_Grove_Vision_AI_Module_V2/EPII_CM55M_APP_S/app/scenario_app/optical_cam_oflow/pipeline/cvapp_optical_flow.cpp)
-- 可视化发布：
-  [viz_publish.cpp](/home/enmin/Seeed_Grove_Vision_AI_Module_V2/EPII_CM55M_APP_S/app/scenario_app/optical_cam_oflow/viz/viz_publish.cpp)
-- 配置头：
-  [common_config.h](/home/enmin/Seeed_Grove_Vision_AI_Module_V2/EPII_CM55M_APP_S/app/scenario_app/optical_cam_oflow/config/common_config.h)
-
-## 6. 备注
-
-- 根目录 `README.md` 保持原 Seeed 仓库语义，不在此文档覆盖。
-- 历史调试过程请看 `plan/` 下旧计划；本文件只保留当前主线事实。
-- 2026-03-13 已验证当前 `1432 KiB` arena 下的最大稳定输入是 `157x203`。
-- 同日验证结果表明：Vela 的 arena 估计与模型本体匹配，但不能覆盖运行期额外 `prev buffer` 开销；`158x202` 和 `155x206` 会在板端初始化阶段失败。
+收到listening再按RESET。传输完成不等于部署验收；按[测试规范](TESTING.md)检查I/O、推理、实际帧、数值和性能。本版没有通用张量输入固件，新增任务需要相应协议适配。

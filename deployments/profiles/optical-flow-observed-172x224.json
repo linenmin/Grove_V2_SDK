@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "camera": "OV5647",
+  "device": {
+    "vid": "0x1A86",
+    "pid": "0x55D3",
+    "baud": 921600
+  },
+  "mode": "observe",
+  "notes": "Observed 2026-09-24; exact model/firmware identity unverified. Cannot flash.",
+  "id": "optical-flow-observed-172x224",
+  "verify": {
+    "frame_resolution": [
+      224,
+      176
+    ],
+    "forbidden_regex": [
+      "(?i)\\bfail(?:ed|ure)?\\b"
+    ],
+    "input_shape": [
+      1,
+      172,
+      224,
+      6
+    ],
+    "required": [
+      "camera input init done",
+      "Ethos-U55 device initialised",
+      "initial done"
+    ],
+    "min_frames": 3,
+    "output_shape": [
+      1,
+      176,
+      224,
+      2
+    ]
+  },
+  "app": "optical_cam_oflow"
+}

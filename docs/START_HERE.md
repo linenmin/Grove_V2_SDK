@@ -1,36 +1,29 @@
-# Start Here
+# Grove V2 部署与测试
 
-如果你是第一次接手这个仓库，或者你是一个**0-context agent**，请按下面顺序读取：
+本库使用一个主机入口、一个skill、每个模型一份profile。没有唯一默认模型。
 
-1. [plan/README.md](/home/enmin/Seeed_Grove_Vision_AI_Module_V2/plan/README.md)
-2. [docs/MINIMAL_DEPLOYMENT.md](/home/enmin/Seeed_Grove_Vision_AI_Module_V2/docs/MINIMAL_DEPLOYMENT.md)
-3. [docs/DEPLOYMENT.md](/home/enmin/Seeed_Grove_Vision_AI_Module_V2/docs/DEPLOYMENT.md)
-4. [docs/MODEL_EXPORT.md](/home/enmin/Seeed_Grove_Vision_AI_Module_V2/docs/MODEL_EXPORT.md)
-5. [docs/KNOWLEDGE_BASE.md](/home/enmin/Seeed_Grove_Vision_AI_Module_V2/docs/KNOWLEDGE_BASE.md)
-6. [plan/plan-018-optical-flow-project-reorganization.md](/home/enmin/Seeed_Grove_Vision_AI_Module_V2/plan/plan-018-optical-flow-project-reorganization.md)
+## 环境与常用操作
 
-## 当前只认这条主线
+Python 3.11+；在仓库根目录创建独立环境并安装 requirements-host.txt。本机已配置 C:/00Work/Envs/grove-host/Scripts/python.exe，以下python可用它替代。
 
-- 当前有效部署基线是 `157x203 -> 160x208` 光流模型。
-- 当前有效可视化结果是 `INVOKE resolution = [208, 160]` 且输出为光流图。
-- `158x202` 及更大输入在当前 `1432 KiB` arena 下仍可能通过 Vela 编译，但板端会在 `prev buffer` 分配阶段失败，不作为默认部署主线。
-- `150x200 -> 160x208` 只保留为早期实验记录，不作为默认部署主线。
+```text
+python -m venv .venv-host
+# 使用新环境的python执行：
+python -m pip install -r requirements-host.txt
+python tools/grovectl.py doctor
+python tools/grovectl.py profile deployments/profiles/optical-flow-observed-172x224.json
+python tools/grovectl.py monitor --profile deployments/profiles/optical-flow-observed-172x224.json --seconds 120
+```
 
-## 不要先做的事
+monitor出现listening后再按RESET；先按后监听可能漏日志。新建运行目录下的STOP空文件可提前结束。串口打开可能影响复位线；monitor不发送设备数据。输出原始uart.bin、summary.json和少量帧；先读摘要，不粘贴base64。退出码3表示验收条件不足，也可能只是缺启动日志。
 
-- 不要先相信旧 `plan` 中所有结论都还有效。
-- 不要把旧 `144x192` 或 `150x200` 模型当成默认模型。
-- 不要先改根目录 `README.md`，它保持 Seeed 上游语义。
+## 按需阅读
 
-## 你要找什么文档
+- [部署协议](DEPLOYMENT.md)：profile、编译、打包、烧录与新模型。
+- [测试规范](TESTING.md)：运行、数值正确性、性能与证据。
+- [硬件/诊断](KNOWLEDGE_BASE.md)：相机、串口、Flash和预览边界。
+- [光流项目](../projects/optical_flow/README.md)：特定项目的导出/评测/预览。
+- [整理记录](MAINTENANCE.md)：迁移删除与验证范围。
+- [历史](history/README.md)：按需回查旧实验。
 
-- 只想最快部署一次：
-  看 [docs/MINIMAL_DEPLOYMENT.md](/home/enmin/Seeed_Grove_Vision_AI_Module_V2/docs/MINIMAL_DEPLOYMENT.md)
-- 想知道当前主线到底是什么：
-  看 [docs/DEPLOYMENT.md](/home/enmin/Seeed_Grove_Vision_AI_Module_V2/docs/DEPLOYMENT.md)
-- 想重新导出当前主线模型：
-  看 [docs/MODEL_EXPORT.md](/home/enmin/Seeed_Grove_Vision_AI_Module_V2/docs/MODEL_EXPORT.md)
-- 想知道硬事实和坑：
-  看 [docs/KNOWLEDGE_BASE.md](/home/enmin/Seeed_Grove_Vision_AI_Module_V2/docs/KNOWLEDGE_BASE.md)
-- 想知道后续整理怎么推进：
-  看 [plan/plan-018-optical-flow-project-reorganization.md](/home/enmin/Seeed_Grove_Vision_AI_Module_V2/plan/plan-018-optical-flow-project-reorganization.md)
+现有板端172×224模型曾完成相机/NPU初始化与推理，精确哈希未确认；观察profile不能用于刷写。本轮仓库整理不替换板上固件。

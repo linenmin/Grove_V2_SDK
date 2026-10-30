@@ -46,5 +46,10 @@ model_zoo/**/_temp_*.bin
 __pycache__/
 *.py[cod]
 *.log
-tools/demo_video/tflites/
-tools/model_export/**/output*/
+
+# Host tools and isolated run evidence
+.venv-host/
+runs/
+.build.lock
+projects/optical_flow/export/**/output*/
+projects/optical_flow/demo_video/tflites/

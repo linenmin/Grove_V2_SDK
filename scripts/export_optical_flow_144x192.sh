@@ -3,9 +3,9 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-TOOL_DIR="${REPO_ROOT}/tools/model_export/optical_flow_144x192"
+TOOL_DIR="${REPO_ROOT}/projects/optical_flow/export/optical_flow_144x192"
 
-PYTHON_BIN="${PYTHON_BIN:-/home/enmin/miniconda3/envs/vela/bin/python}"
+PYTHON_BIN="${PYTHON_BIN:-python3}"
 CHECKPOINT_PREFIX="${OPTICAL_FLOW_CHECKPOINT_PREFIX:-${TOOL_DIR}/assets/checkpoints/best.ckpt}"
 CALIBRATION_DIR="${OPTICAL_FLOW_CALIBRATION_DIR:-${TOOL_DIR}/assets/calibration}"
 VARIANT="${OPTICAL_FLOW_EXPORT_VARIANT:-mainline}"

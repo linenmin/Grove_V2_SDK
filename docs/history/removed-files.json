@@ -1,0 +1,346 @@
+{
+  "base_commit": "2297e6f5a9ad375d18e5efe764755a8bfadf73d3",
+  "backup": "C:/00Work/Backups/Grove_V2_SDK-before-cleanup-20260924/worktree.tar",
+  "files": [
+    {
+      "path": ".cursor/skills/discord-notify-wsl2/SKILL.md",
+      "bytes": 4262,
+      "sha256": "afc83bdcbc5cd366c8f5076aef4914d8fce290e9800a0332eacd5a614490c226"
+    },
+    {
+      "path": ".cursor/skills/log-extractor/SKILL.md",
+      "bytes": 3815,
+      "sha256": "a25fbb8d24e6ffe0550fbfbe349368fa89c29587c21ed6d2a1766554b8a684d7"
+    },
+    {
+      "path": ".cursor/skills/pi-planning-with-files/examples.md",
+      "bytes": 4628,
+      "sha256": "4a18ae473d10767d48bb189d61d62283817c64a3f503e4c5f19bbeb4daa3a788"
+    },
+    {
+      "path": ".cursor/skills/pi-planning-with-files/package.json",
+      "bytes": 739,
+      "sha256": "0cece5505d62a5677f8f69caf85d80078153ee7bb0473f4912f22df0b570984c"
+    },
+    {
+      "path": ".cursor/skills/pi-planning-with-files/reference.md",
+      "bytes": 8284,
+      "sha256": "5fdc3b282963ed1ea22d3fc198d168d44722864f7d59d483ed4908919562fa56"
+    },
+    {
+      "path": ".cursor/skills/pi-planning-with-files/SKILL.md",
+      "bytes": 6421,
+      "sha256": "475b82deac3f763af34b303d2a9fe9ffef15a31e1fe48a8b03eebb44b046a400"
+    },
+    {
+      "path": ".cursor/skills/pi-planning-with-files/scripts/check-complete.ps1",
+      "bytes": 1670,
+      "sha256": "8cf341be75ed0e223963ea38633ffbbf82007573157f88c72e2df0d843065064"
+    },
+    {
+      "path": ".cursor/skills/pi-planning-with-files/scripts/check-complete.sh",
+      "bytes": 1664,
+      "sha256": "a9c527d9d706ddd77b55b647da4fc70000c3c3d3fe25574c813014440f02321c"
+    },
+    {
+      "path": ".cursor/skills/pi-planning-with-files/scripts/init-session.ps1",
+      "bytes": 2551,
+      "sha256": "ca1a08bf2fcc31b5b34957add4e6008b95885eb5c2ff34f7c9d7b2f008141934"
+    },
+    {
+      "path": ".cursor/skills/pi-planning-with-files/scripts/init-session.sh",
+      "bytes": 2374,
+      "sha256": "d9027e934c5f18819b597c70a63298b5f003b36debde0ea194b2462ea2f90bdf"
+    },
+    {
+      "path": ".cursor/skills/pi-planning-with-files/scripts/session-catchup.py",
+      "bytes": 7669,
+      "sha256": "62a3e9be693c280cc762330e0af0c893ef4e3100e59dd8cf58a037b8c0e68bdc"
+    },
+    {
+      "path": ".cursor/skills/pi-planning-with-files/templates/findings.md",
+      "bytes": 3656,
+      "sha256": "c3ba0b34fef899007ebea2ea684a13fcf57eaf363aeba8f13bf55b5f2ed0b36c"
+    },
+    {
+      "path": ".cursor/skills/pi-planning-with-files/templates/progress.md",
+      "bytes": 4115,
+      "sha256": "a00fe1675565daf17990cd7bbd95b56557e232e9cb81d57ee1a775d0ee0c663a"
+    },
+    {
+      "path": ".cursor/skills/pi-planning-with-files/templates/task_plan.md",
+      "bytes": 4745,
+      "sha256": "f769be802524cdf68698a14c3ab28ce1f8d651db8445aabe840a434980f022fc"
+    },
+    {
+      "path": ".cursor/skills/project-governance/SKILL.md",
+      "bytes": 1845,
+      "sha256": "a75b05c1aa128a0c22856407935af797f904e6c482a8583d8ac903654749d352"
+    },
+    {
+      "path": ".cursor/skills/we2-himax-iterative-debug/SKILL.md",
+      "bytes": 7678,
+      "sha256": "64d5db862973f784a4940104116a4458921d9fb0b72fe8c9ec110440c1080566"
+    },
+    {
+      "path": ".cursor/skills/we2-himax-iterative-debug/agents/openai.yaml",
+      "bytes": 310,
+      "sha256": "60c8998440a14038735048d2b2fe8bd3089c88dd803cd89a0bd78cda027415ba"
+    },
+    {
+      "path": ".cursor/skills/we2-himax-iterative-debug/references/log-patterns.md",
+      "bytes": 1065,
+      "sha256": "80d99a98ca8befd6f7cbb90da78ba7a1a33e86abdea79e0e6e99d798441a0564"
+    },
+    {
+      "path": ".cursor/skills/we2-himax-iterative-debug/references/plan-routing.md",
+      "bytes": 1705,
+      "sha256": "070152b5f993ac87ca34bb4ad6dc3cfe2ec7ad58272d004b464d391fe8bb430b"
+    },
+    {
+      "path": ".cursor/skills/we2-himax-iterative-debug/references/plan-writing.md",
+      "bytes": 4572,
+      "sha256": "1d7f16592708499a3ae962bd366441b19870ead165a0849b03d0d932e761fcc9"
+    },
+    {
+      "path": ".cursor/skills/we2-himax-iterative-debug/scripts/append_plan_entry.sh",
+      "bytes": 2428,
+      "sha256": "b2b7743463b3a663742b9bf3296695d2d2661b79a2cc6911f40474789b849cff"
+    },
+    {
+      "path": ".cursor/skills/we2-himax-iterative-debug/scripts/extract_himax_keylog.sh",
+      "bytes": 3567,
+      "sha256": "1642f7ae1140c880c171122a1ce79ea42219d31cb00d91fd252ef8d9f2f9de4d"
+    },
+    {
+      "path": ".cursor/skills/we2-himax-iterative-debug/scripts/find_latest_plan.sh",
+      "bytes": 436,
+      "sha256": "eb67d98d4d92aa187babb48d041eb36cb7b4ef0e851c50b28ca2cc757fd30c5b"
+    },
+    {
+      "path": ".cursor/skills/we2-himax-iterative-debug/scripts/get_model_slot.sh",
+      "bytes": 6002,
+      "sha256": "a99211efa832bdbaa52d3e30065fbe563ed1668b9c67d6f02ec2accb7497489e"
+    },
+    {
+      "path": ".cursor/skills/we2-himax-iterative-debug/scripts/inspect_tflite_model.sh",
+      "bytes": 3099,
+      "sha256": "1e7e414560bcdc1456f25f3af4127d1ba3239480337e06c6e5949542fa6b5d9a"
+    },
+    {
+      "path": ".cursor/skills/we2-himax-iterative-debug/scripts/normalize_model_path.sh",
+      "bytes": 1716,
+      "sha256": "653430ac0371ae46e5930a77642c27948e7122208371c4d15488222b56b71be2"
+    },
+    {
+      "path": ".cursor/skills/we2-himax-iterative-debug/scripts/set_tensor_arena_kb.sh",
+      "bytes": 1959,
+      "sha256": "c0edd2aca73bf44bc3271206123aaffe73459e4c77f6b2e87a30a23f3cc3413d"
+    },
+    {
+      "path": ".cursor/skills/we2-himax-iterative-debug/scripts/start_debug_history.sh",
+      "bytes": 2046,
+      "sha256": "eaafc49cc1ce63945fdfc1aeb614cc7cf7f1bb62b790e9a5738c40dc5d87fc03"
+    },
+    {
+      "path": ".cursor/skills/we2-optical-sd-pipeline/reference.md",
+      "bytes": 2741,
+      "sha256": "83164a84b97f0debdfc4f681b9f91c294ea288233b416859f43d73a377d4c069"
+    },
+    {
+      "path": ".cursor/skills/we2-optical-sd-pipeline/SKILL.md",
+      "bytes": 5450,
+      "sha256": "d9b9e0b2750e223a3e3c6102919259dfd87076b46822f7e66ebad74e52b9b053"
+    },
+    {
+      "path": ".cursor/skills/we2-optical-sd-pipeline/scripts/run_optical_pipeline.sh",
+      "bytes": 6028,
+      "sha256": "f2759f2aca877ade51542689dc1356b14558aa169144b8ee13592b33eb55838e"
+    },
+    {
+      "path": ".cursor/skills/windows-observation-workflow/SKILL.md",
+      "bytes": 754,
+      "sha256": "943dbc2544d8c05983cc9a386beb06adba9069992fe22bd196c9e53af60e38ca"
+    },
+    {
+      "path": ".agent/skills",
+      "bytes": 17,
+      "sha256": "bae5c83812b14049a9e09a32466fd9324034b074ef87c8483c5292caa7c483ed"
+    },
+    {
+      "path": "test_checker.py",
+      "bytes": 523,
+      "sha256": "1c1b5ad322f23085f1fc334bc2af0738459222da0b53dc35e4dd348e039ea0e4"
+    },
+    {
+      "path": "test_diff.py",
+      "bytes": 436,
+      "sha256": "49717dfcc52ac9c783aefec0fdc4fc3b1acdadeb9dec6a4d669a727519079529"
+    },
+    {
+      "path": "test_edges.py",
+      "bytes": 348,
+      "sha256": "951d6aba92f212de129bb661a3a8f7813852bf00843b83b88c210a8adeafa726"
+    },
+    {
+      "path": "test_img_simple.py",
+      "bytes": 136,
+      "sha256": "31543a0da7d1aabd6d9b775e5e51ea6fe61cb71b59d7e04fad31bf353071c03d"
+    },
+    {
+      "path": "test_img.py",
+      "bytes": 391,
+      "sha256": "cc525d3d804b40d24512763910bb0cfba9cdc5be4a1ef6f3b9fbebe376864d7c"
+    },
+    {
+      "path": "test_img2.py",
+      "bytes": 634,
+      "sha256": "f51c74d0fe6f26701d9838168d2e16d3193cdce97de4032af60e1976499952bd"
+    },
+    {
+      "path": "test_img3.py",
+      "bytes": 168,
+      "sha256": "58311167f9420070bfa8a8ca789a7a87160e031795c218ef841998f4d378bf07"
+    },
+    {
+      "path": "scripts/build_context_snapshot.sh",
+      "bytes": 12152,
+      "sha256": "5215291a733c5833e6617f267a14dc8c15c6c115359a13bb5e653c4a6e889299"
+    },
+    {
+      "path": "scripts/extract_invoke_frames_from_log.py",
+      "bytes": 3155,
+      "sha256": "94a1a1d754a6910d16de67f635f5ea5f1ea8072fc1c2a1a2b7502ad073afc32a"
+    },
+    {
+      "path": "logs/pipeline/elf_strings_20260222.txt",
+      "bytes": 1208613,
+      "sha256": "e9009736bb9957a152ec97a23f1552e521b0c8a665a45b4f381dc2c713ad2a85"
+    },
+    {
+      "path": "logs/pipeline/elf_strings_model_poc_20260222.txt",
+      "bytes": 1208260,
+      "sha256": "c51f0caa7d986cf684a359b66258085787a8ebbd0caa139c0fec101029b27f8a"
+    },
+    {
+      "path": "logs/pipeline/optical_sd_clean_run_20260222.log",
+      "bytes": 1039,
+      "sha256": "79ddc8265a86cc836e301fcfb68b6ca37efc6715a6232636f8348ba32fab3497"
+    },
+    {
+      "path": "logs/pipeline/pipeline_nomodel_optical_sd_clean_20260222_175215.log",
+      "bytes": 1039,
+      "sha256": "77469ade5044363733ce72beefa70be8ecf11e8f97da28455496e9edc192feb4"
+    },
+    {
+      "path": "logs/pipeline/pipeline_nomodel_optical_sd_clean_20260222_175300.log",
+      "bytes": 783,
+      "sha256": "b0aefa1acf23f9a48a9e563979e470a2d861dfabd967afbc5488b090e79c825a"
+    },
+    {
+      "path": "logs/pipeline/pipeline_nomodel_optical_sd_clean_20260222_175352.log",
+      "bytes": 782,
+      "sha256": "d387a11b9b0f53b30d7e4c9498005865eb19b03ff8d82eae3eaaaf2de3fa4a99"
+    },
+    {
+      "path": "logs/pipeline/pipeline_nomodel_optical_sd_clean_20260222_175437.log",
+      "bytes": 1039,
+      "sha256": "f763404911bf3965df035fd98ff6a153b3239f5c8e6f43e59387f93f29732e08"
+    },
+    {
+      "path": "logs/pipeline/pipeline_nomodel_optical_sd_clean_20260222_175526.log",
+      "bytes": 1039,
+      "sha256": "f2a5a36c0ca7a143a3a4b21a65670d7945e58ab6d19795f3045bbe1b7a972d36"
+    },
+    {
+      "path": "logs/pipeline/pipeline_nomodel_optical_sd_clean_20260222_175602.log",
+      "bytes": 1039,
+      "sha256": "7b0fc71dce101a9ab9e834eb4de8f5b03bc587a9bce020e16f233a1284a2a73f"
+    },
+    {
+      "path": "logs/pipeline/pipeline_nomodel_optical_sd_clean_20260222_175646.log",
+      "bytes": 1039,
+      "sha256": "af2cfdff7f4185955f852131d5fad642b20a0ea6ebcab74c0c862480c1aa439f"
+    },
+    {
+      "path": "logs/pipeline/pipeline_nomodel_optical_sd_clean_20260222_175726.log",
+      "bytes": 1039,
+      "sha256": "b8a99333639800562adb6ceaed105048beccad383804f9886f40f293916829f1"
+    },
+    {
+      "path": "logs/pipeline/pipeline_nomodel_optical_sd_clean_20260222_175803.log",
+      "bytes": 1039,
+      "sha256": "550e8c0f6095a322d5d37a797d3dbbffd21945999bdc912ebaf8373874fc8156"
+    },
+    {
+      "path": "logs/pipeline/pipeline_nomodel_optical_sd_clean_20260222_175840.log",
+      "bytes": 782,
+      "sha256": "f74f98f5af6ecf3e5dd0727a831c7607fafbed4fe8714c70f10b9a17464baed9"
+    },
+    {
+      "path": "logs/pipeline/pipeline_nomodel_optical_sd_clean_20260222_175928.log",
+      "bytes": 782,
+      "sha256": "d99c3d1528996fc456d12a721bb50d28a93b6e949abb77cc4a51c82b535b3236"
+    },
+    {
+      "path": "logs/pipeline/pipeline_nomodel_optical_sd_clean_20260222_180017.log",
+      "bytes": 782,
+      "sha256": "18912ad0050232c440e979d0aefe63b7b315f08357b8a17d5c4bd70b8e7d2535"
+    },
+    {
+      "path": "logs/pipeline/pipeline_nomodel_optical_sd_clean_20260222_181954.log",
+      "bytes": 1039,
+      "sha256": "550e8c0f6095a322d5d37a797d3dbbffd21945999bdc912ebaf8373874fc8156"
+    },
+    {
+      "path": "logs/pipeline/poc_auto_uart_20260222.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "logs/pipeline/poc_auto_uart_after_flash_20260222.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "logs/pipeline/raw_uart_after_pipeline_20260222.log",
+      "bytes": 3783,
+      "sha256": "a172f99fc8d03ff4dea370877777d148e62e186d538478e6bd20895ff08b528b"
+    },
+    {
+      "path": "logs/pipeline/serread_model_poc_success_20260222.log",
+      "bytes": 3033,
+      "sha256": "a514c90af0fa097001291548de153d4baeedd42acdc0f1274bbde9458b500b40"
+    },
+    {
+      "path": "logs/pipeline/serread_new_fail_20260222.log",
+      "bytes": 1767,
+      "sha256": "3a83a957039c4a5a5d1324ae4eac2597fe8cd957e5661bea2b13780c42d3cbdc"
+    },
+    {
+      "path": "logs/pipeline/serread_new_success_20260222.log",
+      "bytes": 2271,
+      "sha256": "3ede87134800705d423c2842c563d618908c1a6bd16b73aee7642eefcb923d87"
+    },
+    {
+      "path": "logs/pipeline/serread_nomodel_validate_20260222.log",
+      "bytes": 2278,
+      "sha256": "db2ecc24df3e6b0193772fa852b5509843de7b5a251a9db83c3db5c789f1d480"
+    },
+    {
+      "path": "tools/eval/run_m1_fp32_eval.sh",
+      "bytes": 1168,
+      "sha256": "b17dc1e4e3647a9146e924d2109ac8b4a8beb9a0a47f1968bf352f33af60c7c9"
+    },
+    {
+      "path": "tools/eval/run_m1_fp32_native_eval.sh",
+      "bytes": 597,
+      "sha256": "9e4d223f76c6555679c48fdecb803ba74acbfc401c0c83095cc0b5671667a388"
+    },
+    {
+      "path": "tools/eval/run_m1_int8_eval.sh",
+      "bytes": 1098,
+      "sha256": "af8a694e92fba3f6dabff55fc1987eff07a9922efe8305ab113de7d43f8fa862"
+    }
+  ]
+}

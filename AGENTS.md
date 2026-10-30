@@ -1,79 +1,16 @@
-# AGENTS
+# Grove V2 多模型部署工作区
 
-<skills_system priority="1">
+默认中文交流。先读 [使用入口](docs/START_HERE.md)，操作按 [grove-deploy skill](skills/grove-deploy/SKILL.md)，不必全文读取历史。
 
-## Available Skills
+- tools/grovectl.py：统一主机入口，不依赖训练框架。
+- deployments/profiles/：每个模型/应用组合独立配置，无全库默认模型。
+- projects/optical_flow/：原光流导出、评测、预览与校准资产。
+- EPII_CM55M_APP_S、we2_image_gen_local、xmodem、swd_debugging：底层SDK，保持路径兼容。
+- docs/history：历史证据，不是当前操作指令。
+- runs/（忽略提交）或指定外部Runs：构建、串口日志、帧与摘要。
 
-## Project Entry For 0-Context Agents
+观察不隐含刷写。已获授权的具体部署直接执行，无需重复确认；整理任务本身不授权替换板端固件。刷写须明确profile/设备并校验bundle。Windows管串口、WSL/Linux管编译；一次只有一个串口拥有者。请用户RESET前先等monitor输出listening并保持进程存活；用STOP文件结束监听。
 
-Before doing substantive work on this repo, read these files in order:
+新模型不继承旧I/O、量化、arena或Flash槽位。光流映射地址0x3AB7B000与烧录偏移0xB7B000不可混用。JPEG预览不是原始u/v。验收分清产物、传输、初始化/推理、数值精度和性能；日志关键词不能证明精确模型身份。
 
-1. `plan/README.md`
-2. `docs/MINIMAL_DEPLOYMENT.md`
-3. `docs/DEPLOYMENT.md`
-4. `docs/MODEL_EXPORT.md`
-5. `docs/KNOWLEDGE_BASE.md`
-6. `plan/plan-018-optical-flow-project-reorganization.md`
-
-Current project baseline:
-
-- Treat `157x203 -> 160x208` as the current valid deployment baseline.
-- Treat `158x202` and above as runtime-budget experiments, not the default route.
-- Treat `144x192` and `150x200 -> 160x208` as older validated/experimental history, not the default route.
-- Do not rewrite the root `README.md`; keep the upstream Seeed semantics intact.
-
-If you only need the fastest reproducible route, use `docs/MINIMAL_DEPLOYMENT.md` first.
-If the model file is missing or needs regeneration, use `docs/MODEL_EXPORT.md`.
-
-<!-- SKILLS_TABLE_START -->
-<usage>
-When users ask you to perform tasks, check if any of the available skills below can help complete the task more effectively. Skills provide specialized capabilities and domain knowledge.
-
-How to use skills:
-- Invoke: `npx openskills read <skill-name>` (run in your shell)
-  - For multiple: `npx openskills read skill-one,skill-two`
-- The skill content will load with detailed instructions on how to complete the task
-- Base directory provided in output for resolving bundled resources (references/, scripts/, assets/)
-
-Usage notes:
-- Only use skills listed in <available_skills> below
-- Do not invoke a skill that is already loaded in your context
-- Each skill invocation is stateless
-</usage>
-
-<available_skills>
-
-<skill>
-<name>discord-notify-wsl2</name>
-<description>当用户明确要求「任务完成后用 Discord 通知」时，在 WSL2 环境下通过 DISCORD_WEBHOOK_URL 发送 Discord 消息。使用 bash + curl，临时文件放在 /tmp。</description>
-<location>project</location>
-</skill>
-
-<skill>
-<name>project-governance</name>
-<description>项目治理与文档更新协议 (Index & Knowledge Base Update Policy). Use when creating new plans or after major technical milestones to ensure plan-000 and KNOWLEDGE_BASE are in sync.</description>
-<location>project</location>
-</skill>
-
-<skill>
-<name>we2-himax-iterative-debug</name>
-<description>Iterative debugging playbook for Grove Vision AI V2 (WE2) and Himax AI Web Toolkit across WSL2 and Windows serial handoff. Use when tasks involve build/flash/UART verification, HTML preview issues, compact log extraction, and incremental debug history updates across changing plan markdown files.</description>
-<location>project</location>
-</skill>
-
-<skill>
-<name>we2-optical-sd-pipeline</name>
-<description>Runs the Grove Vision AI V2 optical_sd/optical_cam_oflow firmware iteration pipeline in WSL2 with dual flash modes (nomodel and with-model), including build, image generation, xmodem flash, UART keyword verification, and USB re-attach guidance. Supports agent-visible visualization: --viz-camera + --extract-frames to extract INVOKE images for agent to read. Use when user mentions optical_sd, optical_cam_oflow, cvapp_optical_flow.cpp, flash_img_opticalSD, xmodem, usbipd, agent 可见, 可视化调试, extract-frames, pipeline.</description>
-<location>project</location>
-</skill>
-
-<skill>
-<name>windows-observation-workflow</name>
-<description>Windows 观察 vs WSL2 调试的流程区分. Use when the task involves visualization on Windows or serial handoff for Himax AI Web Toolkit.</description>
-<location>project</location>
-</skill>
-
-</available_skills>
-<!-- SKILLS_TABLE_END -->
-
-</skills_system>
+更新已有说明与项目记录；不强制每轮创建plan、快照或副本。历史失败保留，新证据另记。README.md保持上游说明，日常从docs/START_HERE.md进入。

@@ -1,0 +1,55 @@
+{
+  "schema_version": 1,
+  "camera": "OV5647",
+  "device": {
+    "vid": "0x1A86",
+    "pid": "0x55D3",
+    "baud": 921600
+  },
+  "mode": "deploy",
+  "models": [
+    {
+      "sha256": "8d3f78a41cd91d77d2ef15181a871855907e96a0454fec22e3607491289fb23d",
+      "address": "0xB7B000",
+      "offset": "0x0",
+      "path": "model_zoo/optical_flow/157x203/optical_flow_157x203_vela.tflite"
+    }
+  ],
+  "notes": "Historical repository model. SHA identifies host file only. Rebuild and hardware-verify before calling this a new validated deployment.",
+  "id": "optical-flow-157x203",
+  "flash": {
+    "size": "0x1000000",
+    "firmware_region": [
+      "0x0",
+      "0x171000"
+    ]
+  },
+  "verify": {
+    "frame_resolution": [
+      208,
+      160
+    ],
+    "forbidden_regex": [
+      "(?i)\\bfail(?:ed|ure)?\\b"
+    ],
+    "input_shape": [
+      1,
+      157,
+      203,
+      6
+    ],
+    "required": [
+      "camera input init done",
+      "Ethos-U55 device initialised",
+      "initial done"
+    ],
+    "min_frames": 3,
+    "output_shape": [
+      1,
+      160,
+      208,
+      2
+    ]
+  },
+  "app": "optical_cam_oflow"
+}

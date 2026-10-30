@@ -160,6 +160,42 @@ class SerialTests(unittest.TestCase):
         self.assertTrue(port.closed)
 
 
+    def test_auto_reset_pulses_both_lines_after_listening(self):
+        events=[]
+        class Fake:
+            def __setattr__(self,name,value):
+                if name in ('rts','dtr'): events.append((name,value))
+                object.__setattr__(self,name,value)
+            def open(self): events.append('open')
+            def close(self): pass
+            def read(self,n):
+                (directory/'STOP').touch()
+                return b''
+        with tempfile.TemporaryDirectory() as temp, patch('grove.serial_io.time.sleep'):
+            directory=Path(temp)
+            capture({'port':'fake'},921600,5,directory,lambda event:events.append(event['state']),Fake,auto_reset=True)
+        start=events.index('listening')
+        self.assertEqual(events[:events.index('open')],[('dtr',False),('rts',False)])
+        self.assertEqual(events[start+1:start+6],[('rts',True),('dtr',True),('rts',False),('dtr',False),'reset_pulse_sent'])
+
+    def test_flasher_wrapper_opens_low_and_pulses_once(self):
+        spec=importlib.util.spec_from_file_location('xmodem_autoreset',ROOT/'tools/grove/xmodem_autoreset.py')
+        module=importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
+        events=[]
+        class Fake:
+            def __setattr__(self,name,value):
+                if name in ('rts','dtr'): events.append((name,value))
+                object.__setattr__(self,name,value)
+            def open(self): events.append('open')
+        module.install(Fake,delay=0)
+        with patch('grove.serial_io.time.sleep'):
+            port=Fake(); port.open()
+            deadline=time.monotonic()+2
+            while len(events)<7 and time.monotonic()<deadline: time.sleep(0.01)
+            port.open()
+        self.assertEqual(events[:7],[('dtr',False),('rts',False),'open',('rts',True),('dtr',True),('rts',False),('dtr',False)])
+        self.assertEqual(events[7:],['open'])
+
 class FlasherTests(unittest.TestCase):
     def test_deadline_and_spaces(self):
         spec=importlib.util.spec_from_file_location('grove_flasher',ROOT/'xmodem/xmodem_send.py')
